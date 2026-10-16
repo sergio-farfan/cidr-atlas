@@ -13,6 +13,7 @@ Prepared as 0.4.0 (app 0.4.0+5, `cidrctl` 0.4.0) and not yet published. This sec
 
 ### Added
 
+- **Settings** (gear icon in the workspace header, **CIDR Atlas > Settings…** or ⌘,) with an **Appearance** choice of **System**, **Light** or **Dark**. System, the default, follows the macOS appearance; the choice applies immediately and is kept in the app's user defaults (`theme.appearance`), outside the inventory. A new light theme meets WCAG AA text contrast; the dark theme keeps the existing look. Adds the `shared_preferences` package.
 - **Clear inventory…** in the inventory table header deletes every local record, or one routing domain, after the user types `CLEAR`. It offers **Export backup first**, runs in one transaction with one history entry, keeps change history and never touches OCI. If `cidrctl` changes the record count in the meantime, nothing is deleted.
 - `cidrctl clear [--routing-domain D] --yes` does the same from the CLI. Without `--yes` it exits 2 and changes nothing; a missing database exits 1 and is never created; a record in another routing domain that names a cleared record as its parent blocks the clear.
 - A progress panel centred over the discovery dialog shows the step, completed region/compartment scopes, elapsed time, the collection limit and its own **Cancel**. It replaces the in-form indicator that could sit below the visible area; later errors scroll into view.
@@ -56,7 +57,7 @@ Prepared as 0.4.0 (app 0.4.0+5, `cidrctl` 0.4.0) and not yet published. This sec
 
 ### Validation
 
-- Verified 2026-10-16 on the working tree: core 72, data 124, OCI adapter 110, CLI 98 and Flutter widget 130 tests passed (534 total; v0.3.0: 332). `dart format --set-exit-if-changed` changed no files, and `dart analyze` / `flutter analyze` reported no issues under the stricter lint configuration.
+- Verified 2026-10-16 on the working tree: core 72, data 124, OCI adapter 110, CLI 98 and Flutter widget 176 tests passed (580 total; v0.3.0: 332). `dart format --set-exit-if-changed` changed no files, and `dart analyze` / `flutter analyze` reported no issues under the stricter lint configuration.
 - Tests use fictional runners, isolated temporary or memory stores and a fictional `HOME`. No live tenancy was collected, no OCI configuration was read and the default inventory was not opened. The retry and timeout semantics come from the installed OCI CLI 3.94.1 `--help` and SDK source, not from a run against a tenancy.
 - An end-to-end check of a compiled 0.4.0 CLI found the two export/discovery gaps listed under Fixed, which are now covered by regression tests.
 - Native build: a clean universal release app (arm64 and x86_64, ad hoc signed, strict signature verification), the `cidrctl` executable and the DMG were built on Apple Silicon; the DMG passed architecture, signature, image, read-only mount, contents and checksum checks. The compiled CLI passed an end-to-end run on scratch databases after two fixes, and a v0.3.0 inventory copy round-tripped with identical records.

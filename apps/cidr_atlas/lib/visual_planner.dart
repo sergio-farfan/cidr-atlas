@@ -10,13 +10,7 @@ import 'package:flutter/services.dart';
 
 import 'cidr_inspector.dart';
 import 'help.dart';
-
-const _surface = Color(0xff171e2b);
-const _border = Color(0xff293244);
-const _muted = Color(0xff98a6bc);
-const _accent = Color(0xff8fafff);
-const _free = Color(0xff77d8b4);
-const _blocked = Color(0xffdbc18b);
+import 'theme.dart';
 
 /// A local planning workspace. Every calculation uses the full inventory.
 class VisualPlanner extends StatefulWidget {
@@ -41,6 +35,7 @@ class VisualPlanner extends StatefulWidget {
 }
 
 class _VisualPlannerState extends State<VisualPlanner> {
+  AtlasPalette get p => context.palette;
   final _manualPool = TextEditingController(text: '10.0.0.0/8');
   final _manualDomain = TextEditingController();
   final _prefix = TextEditingController(text: '24');
@@ -336,8 +331,8 @@ class _VisualPlannerState extends State<VisualPlanner> {
   }) => Container(
     padding: padding,
     decoration: BoxDecoration(
-      color: _surface,
-      border: Border.all(color: _border),
+      color: p.surface,
+      border: Border.all(color: p.border),
       borderRadius: BorderRadius.circular(12),
     ),
     child: Material(color: Colors.transparent, child: child),
@@ -608,7 +603,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
             _demandMode
                 ? 'Enter IP demand directly. Growth is applied once to the selected demand basis. Additional IPs must exclude demand already counted above.'
                 : 'The routing domain is the overlap-check scope for connected address plans. Every non-retired range in this domain is checked.',
-            style: const TextStyle(color: _muted, fontSize: 12),
+            style: TextStyle(color: p.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 16),
           FilledButton.icon(
@@ -622,10 +617,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
               padding: const EdgeInsets.only(top: 14),
               child: Semantics(
                 liveRegion: true,
-                child: Text(
-                  _error!,
-                  style: const TextStyle(color: Color(0xffffb4ab)),
-                ),
+                child: Text(_error!, style: TextStyle(color: p.plannerError)),
               ),
             ),
         ],
@@ -665,14 +657,14 @@ class _VisualPlannerState extends State<VisualPlanner> {
               ],
             ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               'Inspect address hierarchy and free space, then reserve a CIDR locally.',
-              style: TextStyle(color: _muted),
+              style: TextStyle(color: p.textSecondary),
             ),
             const SizedBox(height: 6),
-            const Text(
+            Text(
               'Connectivity is not collected: routes, gateways, DRGs and peering are not shown.',
-              style: TextStyle(color: _muted, fontSize: 12),
+              style: TextStyle(color: p.textSecondary, fontSize: 12),
             ),
             const SizedBox(height: 16),
             if (rail)
@@ -734,12 +726,12 @@ class _VisualPlannerState extends State<VisualPlanner> {
       Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline, size: 20, color: _blocked),
+          Icon(Icons.info_outline, size: 20, color: p.reserved),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               'Available in this inventory. $evidence Coverage is partial or unverified; missing observations do not release address space.',
-              style: const TextStyle(fontSize: 12, color: _muted),
+              style: TextStyle(fontSize: 12, color: p.textSecondary),
             ),
           ),
         ],
@@ -765,7 +757,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
           ),
         if (result == null) ...[
           _panel(
-            const Column(
+            Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
@@ -775,12 +767,12 @@ class _VisualPlannerState extends State<VisualPlanner> {
                 SizedBox(height: 12),
                 Text(
                   'Select a routing domain and pool, then find available space. Input and inventory changes clear old recommendations.',
-                  style: TextStyle(color: _muted),
+                  style: TextStyle(color: p.textSecondary),
                 ),
                 SizedBox(height: 12),
                 Text(
                   'Hierarchy shows allocation ancestry and OCI membership. It does not establish network connectivity.',
-                  style: TextStyle(color: _muted, fontSize: 12),
+                  style: TextStyle(color: p.textSecondary, fontSize: 12),
                 ),
               ],
             ),
@@ -825,7 +817,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
           const SizedBox(height: 12),
           Text(
             'Largest free aligned block: ${s.largestFreeBlock?.canonical ?? 'none'}. Partially occupied slots are unavailable.',
-            style: const TextStyle(color: _muted, fontSize: 12),
+            style: TextStyle(color: p.textSecondary, fontSize: 12),
           ),
           if (result.targetAddresses != null)
             Padding(
@@ -839,7 +831,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
               padding: const EdgeInsets.only(top: 8),
               child: Text(
                 warning,
-                style: const TextStyle(fontSize: 12, color: _blocked),
+                style: TextStyle(fontSize: 12, color: p.reserved),
               ),
             ),
         ],
@@ -853,7 +845,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 12, color: _muted)),
+          Text(label, style: TextStyle(fontSize: 12, color: p.textSecondary)),
           const SizedBox(height: 4),
           SelectableText(
             formatAddressCount(count),
@@ -959,13 +951,13 @@ class _VisualPlannerState extends State<VisualPlanner> {
               ),
             ],
           ),
-          const Wrap(
+          Wrap(
             spacing: 16,
             runSpacing: 8,
             children: [
-              Text('○ Free', style: TextStyle(color: _free)),
-              Text('▧ Blocked', style: TextStyle(color: _blocked)),
-              Text('□ Candidate', style: TextStyle(color: _accent)),
+              Text('○ Free', style: TextStyle(color: p.mapFree)),
+              Text('▧ Blocked', style: TextStyle(color: p.mapBlocked)),
+              Text('□ Candidate', style: TextStyle(color: p.mapCandidate)),
             ],
           ),
           const SizedBox(height: 10),
@@ -988,6 +980,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
                       painter: _AddressMapPainter(
                         summary: s,
                         candidate: _candidate?.cidr,
+                        palette: p,
                       ),
                     ),
                   ),
@@ -995,9 +988,9 @@ class _VisualPlannerState extends State<VisualPlanner> {
               },
             ),
           ),
-          const Text(
+          Text(
             'Drag to pan; zoom controls magnify the address axis around the selected candidate. Small spans use a minimum visible marker; free space is drawn above blocked space.',
-            style: TextStyle(color: _muted, fontSize: 11),
+            style: TextStyle(color: p.textSecondary, fontSize: 11),
           ),
           const SizedBox(height: 12),
           for (final entry in shown)
@@ -1011,7 +1004,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
                     child: Text(
                       entry.free ? '○ Free' : '▧ Blocked',
                       style: TextStyle(
-                        color: entry.free ? _free : _blocked,
+                        color: entry.free ? p.success : p.reserved,
                         fontSize: 12,
                       ),
                     ),
@@ -1032,7 +1025,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
               children: [
                 Text(
                   '${_rangePage * 8 + 1}–${_rangePage * 8 + shown.length} of ${ranges.length} intervals',
-                  style: const TextStyle(fontSize: 12, color: _muted),
+                  style: TextStyle(fontSize: 12, color: p.textSecondary),
                 ),
                 IconButton(
                   tooltip: 'Previous intervals',
@@ -1069,7 +1062,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
           Text(
             '${result.candidates.length} shown of ${result.summary.freeSlots} candidates',
             key: const ValueKey('candidate-count'),
-            style: const TextStyle(color: _muted, fontSize: 12),
+            style: TextStyle(color: p.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 12),
           if (candidate == null)
@@ -1091,10 +1084,10 @@ class _VisualPlannerState extends State<VisualPlanner> {
                       focusNode: _candidateFocus[index],
                       style: OutlinedButton.styleFrom(
                         backgroundColor: index == _selected
-                            ? const Color(0xff263958)
+                            ? p.candidateSelected
                             : null,
                         side: BorderSide(
-                          color: index == _selected ? _accent : _border,
+                          color: index == _selected ? p.accent : p.border,
                         ),
                       ),
                       onPressed: () => setState(() {
@@ -1111,10 +1104,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
             const SizedBox(height: 18),
             Text(
               'Selected candidate ${_selected + 1}',
-              style: const TextStyle(
-                color: _accent,
-                fontWeight: FontWeight.w600,
-              ),
+              style: TextStyle(color: p.accent, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
             Text(
@@ -1124,12 +1114,16 @@ class _VisualPlannerState extends State<VisualPlanner> {
                 candidate.details.assignableAddresses != null)
               Text(
                 '${formatAddressCount(candidate.details.assignableAddresses! - result.targetAddresses!)} remaining beyond the chosen allowances',
-                style: const TextStyle(color: _muted, fontSize: 12),
+                style: TextStyle(color: p.textSecondary, fontSize: 12),
               ),
             const SizedBox(height: 12),
             SelectableText(
               candidate.rationale,
-              style: const TextStyle(fontSize: 12, height: 1.5, color: _muted),
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.5,
+                color: p.textSecondary,
+              ),
             ),
             const SizedBox(height: 16),
             Wrap(
@@ -1158,9 +1152,9 @@ class _VisualPlannerState extends State<VisualPlanner> {
               ],
             ),
             const SizedBox(height: 10),
-            const Text(
+            Text(
               'Reservation opens a reviewable local record. Availability is rechecked when the reservation is saved.',
-              style: TextStyle(fontSize: 11, color: _muted),
+              style: TextStyle(fontSize: 11, color: p.textSecondary),
             ),
           ],
         ],
@@ -1210,22 +1204,22 @@ class _VisualPlannerState extends State<VisualPlanner> {
           const SizedBox(height: 12),
           Text(
             '${_kindLabel(record.kind)} · ${record.status.name}',
-            style: const TextStyle(color: _muted, fontSize: 12),
+            style: TextStyle(color: p.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 6),
           SelectableText(
             'Routing domain: ${record.routingDomain}\nParent: ${record.parentId.isEmpty ? 'No explicit parent' : record.parentId}\nOwner: ${record.owner.isEmpty ? 'Unspecified' : record.owner}\nEnvironment: ${record.environment.isEmpty ? 'Unspecified' : record.environment}\nSource: ${record.source.isEmpty ? 'Unspecified' : record.source}\nObserved: ${record.verifiedAt?.toUtc().toIso8601String() ?? 'Unknown'}\nTenancy: ${record.tenancy}\nRegion: ${record.region}\nCompartment: ${record.compartment}',
-            style: const TextStyle(fontSize: 12, height: 1.5, color: _muted),
+            style: TextStyle(fontSize: 12, height: 1.5, color: p.textSecondary),
           ),
           if (record.resourceId.isNotEmpty)
             SelectableText(
               'Resource: ${record.resourceId}',
-              style: const TextStyle(fontSize: 12, color: _muted),
+              style: TextStyle(fontSize: 12, color: p.textSecondary),
             ),
           if (record.vcnId.isNotEmpty)
             SelectableText(
               'VCN: ${record.vcnId}',
-              style: const TextStyle(fontSize: 12, color: _muted),
+              style: TextStyle(fontSize: 12, color: p.textSecondary),
             ),
           if (record.notes.isNotEmpty)
             Padding(
@@ -1285,8 +1279,8 @@ class _VisualPlannerState extends State<VisualPlanner> {
           style: TextStyle(
             fontSize: 10,
             color: unresolved || group.any((r) => conflicts.contains(r.id))
-                ? _blocked
-                : _muted,
+                ? p.reserved
+                : p.textSecondary,
           ),
         ),
         children: [
@@ -1334,19 +1328,19 @@ class _VisualPlannerState extends State<VisualPlanner> {
             ),
           ),
           if (records.isEmpty)
-            const Padding(
+            Padding(
               padding: EdgeInsets.all(14),
               child: Text(
                 'No records in this scope. Add a pool or enter a manual range.',
-                style: TextStyle(fontSize: 12, color: _muted),
+                style: TextStyle(fontSize: 12, color: p.textSecondary),
               ),
             ),
           ...branches,
-          const Padding(
+          Padding(
             padding: EdgeInsets.all(14),
             child: Text(
               'Active, reserved, and planned ranges block. Retired ranges remain visible. Relationships describe ancestry or OCI membership.',
-              style: TextStyle(fontSize: 11, color: _muted),
+              style: TextStyle(fontSize: 11, color: p.textSecondary),
             ),
           ),
         ],
@@ -1482,9 +1476,14 @@ class _HierarchyScope {
 }
 
 class _AddressMapPainter extends CustomPainter {
-  const _AddressMapPainter({required this.summary, required this.candidate});
+  const _AddressMapPainter({
+    required this.summary,
+    required this.candidate,
+    required this.palette,
+  });
   final AddressSpaceSummary summary;
   final Cidr? candidate;
+  final AtlasPalette palette;
 
   static const _top = 20.0;
   static const _height = 56.0;
@@ -1530,13 +1529,19 @@ class _AddressMapPainter extends CustomPainter {
       );
       canvas.save();
       canvas.clipRect(rect);
-      canvas.drawRect(rect, Paint()..color = _blocked.withValues(alpha: 0.35));
+      canvas.drawRect(
+        rect,
+        Paint()
+          ..color = palette.mapBlocked.withValues(
+            alpha: palette.mapBlockedOpacity,
+          ),
+      );
       for (var d = rect.left - height; d < rect.right; d += 10) {
         canvas.drawLine(
           Offset(d, top + height),
           Offset(d + height, top),
           Paint()
-            ..color = _blocked.withValues(alpha: 0.65)
+            ..color = palette.mapBlocked.withValues(alpha: 0.65)
             ..strokeWidth = 1,
         );
       }
@@ -1548,7 +1553,10 @@ class _AddressMapPainter extends CustomPainter {
         Rect.fromLTWH(x(interval.start), top, math.max(2, span), height),
         // Opaque enough to read over blocked hatching when only the minimum
         // marker width is drawn.
-        Paint()..color = _free.withValues(alpha: span < 2 ? 0.95 : 0.45),
+        Paint()
+          ..color = palette.mapFree.withValues(
+            alpha: span < 2 ? 0.95 : palette.mapFreeOpacity,
+          ),
       );
     }
     final selected = candidate;
@@ -1557,7 +1565,7 @@ class _AddressMapPainter extends CustomPainter {
       canvas.drawRect(
         rect,
         Paint()
-          ..color = _accent
+          ..color = palette.mapCandidate
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2,
       );
@@ -1565,19 +1573,21 @@ class _AddressMapPainter extends CustomPainter {
         Offset(rect.left, top - 12),
         Offset(rect.left + 6, top - 4),
         Paint()
-          ..color = _accent
+          ..color = palette.mapCandidate
           ..strokeWidth = 2,
       );
     }
     canvas.drawRect(
       Rect.fromLTWH(0, top, size.width, height),
       Paint()
-        ..color = _border
+        ..color = palette.mapOutline
         ..style = PaintingStyle.stroke,
     );
   }
 
   @override
   bool shouldRepaint(covariant _AddressMapPainter oldDelegate) =>
-      oldDelegate.summary != summary || oldDelegate.candidate != candidate;
+      oldDelegate.summary != summary ||
+      oldDelegate.candidate != candidate ||
+      oldDelegate.palette != palette;
 }

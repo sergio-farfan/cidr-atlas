@@ -82,6 +82,8 @@ CLI profile, with read-only requests.
 - **Safe exports and clearing**: JSON/CSV export with formula escaping, and Clear
   inventory (everything or one routing domain) behind an explicit confirmation.
 - **History** of local changes and import provenance.
+- **Appearance** setting (System, Light or Dark) in Settings (gear icon or ⌘,);
+  System follows macOS, and the choice applies immediately and is remembered.
 - **`cidrctl` CLI** for list, check, reserve, recommend, import, discover, export,
   history and clear, with stable exit codes for scripting.
 
@@ -211,7 +213,11 @@ another cloud should share the relevant planning scope.
 4. Check a proposed CIDR before reserving it, and review the Conflicts view.
 5. Export a JSON backup after important changes.
 
-The sidebar has **Inventory**, **Conflicts**, **Planner** and **History**. The
+The sidebar has **Inventory**, **Conflicts**, **Planner** and **History**.
+**Settings** (the gear icon in the workspace header, **CIDR Atlas > Settings…**
+or ⌘,) sets the **Appearance**: **System** (the default) follows the macOS
+light or dark appearance, while **Light** and **Dark** fix the theme regardless of macOS. The
+choice applies immediately and is kept in the app's user defaults. The
 workspace provides an inventory table, search and filters, prefix details,
 editing, conflict review, history, an address checker, a free-space planner,
 import preview, and JSON/CSV export. Offline imports do not require OCI tooling
@@ -687,10 +693,14 @@ described in [SECURITY.md](SECURITY.md).
 
 ## Uninstall
 
-Quit the app, then remove it and, only if you no longer need it, the local inventory:
+Quit the app, then remove it and, only if you no longer need it, the local inventory.
+The appearance preference is not part of the inventory; it lives in the app's user
+defaults (domain `dev.cidratlas.desktop`):
 
 ```bash
 rm -rf "/Applications/CIDR Atlas.app"
+# Optional: removes the appearance preference.
+defaults delete dev.cidratlas.desktop theme.appearance
 # Optional: deletes every local record. Export a backup first.
 rm -rf "$HOME/Library/Application Support/cidr_atlas"
 ```

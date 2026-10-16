@@ -6,6 +6,8 @@ import 'package:cidr_core/cidr_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'theme.dart';
+
 /// The capacity policy for inspecting a saved [record], shared by the
 /// inventory details pane and the planner.
 ///
@@ -37,6 +39,7 @@ class CidrInspector extends StatefulWidget {
 }
 
 class _CidrInspectorState extends State<CidrInspector> {
+  AtlasPalette get p => context.palette;
   int? _supernetPrefix;
   int? _childPrefix;
 
@@ -54,10 +57,7 @@ class _CidrInspectorState extends State<CidrInspector> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          name,
-          style: const TextStyle(color: Color(0xff98a6bc), fontSize: 12),
-        ),
+        Text(name, style: TextStyle(color: p.textSecondary, fontSize: 12)),
         const SizedBox(height: 4),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -122,7 +122,7 @@ class _CidrInspectorState extends State<CidrInspector> {
         ],
         Text(
           details.policyNote,
-          style: const TextStyle(fontSize: 12, color: Color(0xff98a6bc)),
+          style: TextStyle(fontSize: 12, color: p.textSecondary),
         ),
         const SizedBox(height: 18),
         DropdownButtonFormField<int>(
@@ -140,9 +140,9 @@ class _CidrInspectorState extends State<CidrInspector> {
           'Aligned child slots before blockers',
           formatAddressCount(BigInt.one << (childPrefix - cidr.prefixLength)),
         ),
-        const Text(
+        Text(
           'Free-slot counts require the selected pool and inventory.',
-          style: TextStyle(fontSize: 12, color: Color(0xff98a6bc)),
+          style: TextStyle(fontSize: 12, color: p.textSecondary),
         ),
         if (cidr.prefixLength > 0) ...[
           const SizedBox(height: 18),
@@ -165,9 +165,9 @@ class _CidrInspectorState extends State<CidrInspector> {
               copy: true,
             ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'A calculated supernet does not authorize allocating its range.',
-            style: TextStyle(fontSize: 12, color: Color(0xff98a6bc)),
+            style: TextStyle(fontSize: 12, color: p.textSecondary),
           ),
         ],
       ],

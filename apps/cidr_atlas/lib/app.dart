@@ -2,33 +2,40 @@
 // Desktop inventory workspace and navigation.
 // Author: Sergio Farfan <sergio.farfan@gmail.com>
 
+import 'dart:async';
+
 import 'package:cidr_core/cidr_core.dart';
 import 'package:cidr_data/cidr_data.dart';
 import 'package:cidr_oci/cidr_oci.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'appearance.dart';
 import 'controller.dart';
 import 'cidr_inspector.dart';
 import 'dialogs.dart';
 import 'help.dart';
 import 'oci_dialog.dart';
+import 'settings.dart';
+import 'theme.dart';
 import 'visual_planner.dart';
 
-const _background = Color(0xff10151f);
-const _surface = Color(0xff171e2b);
-const _border = Color(0xff293244);
-const _muted = Color(0xff98a6bc);
-const _accent = Color(0xff8fafff);
+/// Channel for native macOS menu commands sent by `AppDelegate.swift`.
+const atlasMenuChannel = MethodChannel('dev.cidratlas.desktop/menu');
 
-class AtlasApp extends StatelessWidget {
+class AtlasApp extends StatefulWidget {
   const AtlasApp({
     super.key,
     required this.controller,
+    this.appearance,
     this.ociClient,
     this.ociClientFactory,
   });
   final AtlasController controller;
+
+  /// The appearance preference. Production loads it from user defaults;
+  /// without one the app follows macOS and keeps changes in memory only.
+  final AppearanceController? appearance;
 
   /// OCI adapter for discovery; defaults to the installed OCI CLI.
   final OciInventoryClient? ociClient;
@@ -36,71 +43,38 @@ class AtlasApp extends StatelessWidget {
   /// Creates OCI adapters, including one bounded by an entered collection
   /// time limit. Production passes [OciDiscoveryDialog.defaultClientFactory].
   final OciClientFactory? ociClientFactory;
+
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    title: 'CIDR Atlas',
-    debugShowCheckedModeBanner: false,
-    theme: ThemeData(
-      brightness: Brightness.dark,
-      useMaterial3: true,
-      scaffoldBackgroundColor: _background,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: _accent,
-        brightness: Brightness.dark,
-        surface: _surface,
+  State<AtlasApp> createState() => _AtlasAppState();
+}
+
+class _AtlasAppState extends State<AtlasApp> {
+  AppearanceController? _fallbackAppearance;
+
+  AppearanceController get _appearance =>
+      widget.appearance ?? (_fallbackAppearance ??= AppearanceController());
+
+  @override
+  void dispose() {
+    _fallbackAppearance?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: _appearance,
+    builder: (context, _) => MaterialApp(
+      title: 'CIDR Atlas',
+      debugShowCheckedModeBanner: false,
+      theme: atlasTheme(Brightness.light),
+      darkTheme: atlasTheme(Brightness.dark),
+      themeMode: _appearance.themeMode,
+      home: _Workspace(
+        controller: widget.controller,
+        appearance: _appearance,
+        ociClient: widget.ociClient,
+        ociClientFactory: widget.ociClientFactory,
       ),
-      fontFamily: 'Arial',
-      textTheme: const TextTheme(
-        bodyMedium: TextStyle(fontSize: 14, color: Color(0xffe4eaf5)),
-        bodySmall: TextStyle(color: _muted),
-      ),
-      dividerColor: _border,
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: const Color(0xff111824),
-        isDense: true,
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 16,
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(9),
-          borderSide: const BorderSide(color: _border),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(9),
-          borderSide: const BorderSide(color: _border),
-        ),
-        labelStyle: const TextStyle(color: _muted, fontSize: 13),
-      ),
-      dialogTheme: DialogThemeData(
-        backgroundColor: _surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          backgroundColor: const Color(0xffb2c7ff),
-          foregroundColor: const Color(0xff12203b),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-        ),
-      ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: const Color(0xffd6e0f2),
-          side: const BorderSide(color: _border),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
-        ),
-      ),
-      tooltipTheme: const TooltipThemeData(
-        waitDuration: Duration(milliseconds: 400),
-      ),
-    ),
-    home: _Workspace(
-      controller: controller,
-      ociClient: ociClient,
-      ociClientFactory: ociClientFactory,
     ),
   );
 }
@@ -108,10 +82,12 @@ class AtlasApp extends StatelessWidget {
 class _Workspace extends StatefulWidget {
   const _Workspace({
     required this.controller,
+    required this.appearance,
     this.ociClient,
     this.ociClientFactory,
   });
   final AtlasController controller;
+  final AppearanceController appearance;
   final OciInventoryClient? ociClient;
   final OciClientFactory? ociClientFactory;
   @override
@@ -122,12 +98,40 @@ class _WorkspaceState extends State<_Workspace> {
   final _search = TextEditingController();
   final _searchFocus = FocusNode();
   AtlasController get c => widget.controller;
+  AtlasPalette get p => context.palette;
   bool _tree = false;
+  bool _settingsOpen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    atlasMenuChannel.setMethodCallHandler(_onMenuCall);
+  }
+
   @override
   void dispose() {
+    atlasMenuChannel.setMethodCallHandler(null);
     _search.dispose();
     _searchFocus.dispose();
     super.dispose();
+  }
+
+  /// Handles the native macOS menu: **CIDR Atlas > Settings…** (Cmd+,)
+  /// reaches here when Flutter itself did not handle the shortcut.
+  Future<void> _onMenuCall(MethodCall call) async {
+    // Reply at once; the dialog stays open after the menu command returns.
+    if (call.method == 'openSettings') unawaited(_openSettings());
+  }
+
+  /// Opens Settings once; a second request while it is open is ignored.
+  Future<void> _openSettings() async {
+    if (_settingsOpen || !mounted) return;
+    _settingsOpen = true;
+    try {
+      await showAtlasSettings(context, widget.appearance);
+    } finally {
+      _settingsOpen = false;
+    }
   }
 
   Future<void> _editor([PrefixRecord? record]) => showDialog<PrefixRecord>(
@@ -386,6 +390,8 @@ class _WorkspaceState extends State<_Workspace> {
         _searchFocus.requestFocus();
       },
       const SingleActivator(LogicalKeyboardKey.keyI, meta: true): _import,
+      const SingleActivator(LogicalKeyboardKey.comma, meta: true):
+          _openSettings,
     },
     child: Focus(
       autofocus: true,
@@ -415,21 +421,21 @@ class _WorkspaceState extends State<_Workspace> {
                     Container(
                       height: 34,
                       padding: const EdgeInsets.symmetric(horizontal: 26),
-                      decoration: const BoxDecoration(
-                        border: Border(top: BorderSide(color: _border)),
+                      decoration: BoxDecoration(
+                        border: Border(top: BorderSide(color: p.border)),
                       ),
                       child: Row(
                         children: [
-                          const Icon(
+                          Icon(
                             Icons.lock_outline_rounded,
                             size: 12,
-                            color: _muted,
+                            color: p.textSecondary,
                           ),
                           const SizedBox(width: 7),
-                          const Text(
+                          Text(
                             'LOCAL INVENTORY',
                             style: TextStyle(
-                              color: _muted,
+                              color: p.textSecondary,
                               fontSize: 10,
                               letterSpacing: 1.3,
                             ),
@@ -437,7 +443,10 @@ class _WorkspaceState extends State<_Workspace> {
                           const Spacer(),
                           Text(
                             '${c.records.length} prefixes  ·  ${c.domains.length} routing domains',
-                            style: const TextStyle(color: _muted, fontSize: 11),
+                            style: TextStyle(
+                              color: p.textSecondary,
+                              fontSize: 11,
+                            ),
                           ),
                         ],
                       ),
@@ -454,9 +463,9 @@ class _WorkspaceState extends State<_Workspace> {
 
   Widget _sidebar() => Container(
     width: 202,
-    decoration: const BoxDecoration(
-      color: Color(0xff131a26),
-      border: Border(right: BorderSide(color: _border)),
+    decoration: BoxDecoration(
+      color: p.sidebar,
+      border: Border(right: BorderSide(color: p.border)),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -469,17 +478,17 @@ class _WorkspaceState extends State<_Workspace> {
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: const Color(0xff2b3f67),
+                  color: p.brandTile,
                   borderRadius: BorderRadius.circular(11),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.hub_outlined,
-                  color: Color(0xffb2c7ff),
+                  color: p.accentStrong,
                   size: 21,
                 ),
               ),
               const SizedBox(width: 11),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -494,7 +503,7 @@ class _WorkspaceState extends State<_Workspace> {
                     Text(
                       'NETWORK WORKSPACE',
                       style: TextStyle(
-                        color: _muted,
+                        color: p.textSecondary,
                         fontSize: 8,
                         letterSpacing: 1.5,
                       ),
@@ -505,11 +514,15 @@ class _WorkspaceState extends State<_Workspace> {
             ],
           ),
         ),
-        const Padding(
+        Padding(
           padding: EdgeInsets.only(left: 24, bottom: 14),
           child: Text(
             'WORKSPACE',
-            style: TextStyle(color: _muted, fontSize: 10, letterSpacing: 1.6),
+            style: TextStyle(
+              color: p.textSecondary,
+              fontSize: 10,
+              letterSpacing: 1.6,
+            ),
           ),
         ),
         for (final item in [
@@ -521,9 +534,7 @@ class _WorkspaceState extends State<_Workspace> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
             child: Material(
-              color: c.page == item.$1
-                  ? const Color(0xff24334e)
-                  : Colors.transparent,
+              color: c.page == item.$1 ? p.navSelected : Colors.transparent,
               borderRadius: BorderRadius.circular(9),
               child: InkWell(
                 borderRadius: BorderRadius.circular(9),
@@ -538,7 +549,7 @@ class _WorkspaceState extends State<_Workspace> {
                       Icon(
                         item.$2.$1,
                         size: 19,
-                        color: c.page == item.$1 ? _accent : _muted,
+                        color: c.page == item.$1 ? p.accent : p.textSecondary,
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -549,7 +560,9 @@ class _WorkspaceState extends State<_Workspace> {
                             fontWeight: c.page == item.$1
                                 ? FontWeight.w600
                                 : FontWeight.w400,
-                            color: c.page == item.$1 ? Colors.white : _muted,
+                            color: c.page == item.$1
+                                ? p.textSelected
+                                : p.textSecondary,
                           ),
                         ),
                       ),
@@ -560,14 +573,14 @@ class _WorkspaceState extends State<_Workspace> {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xff5d343a),
+                            color: p.conflictBadgeBackground,
                             borderRadius: BorderRadius.circular(5),
                           ),
                           child: Text(
                             '${c.conflicts.length}',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 10,
-                              color: Color(0xffffa9a9),
+                              color: p.conflictBadgeText,
                             ),
                           ),
                         ),
@@ -584,16 +597,16 @@ class _WorkspaceState extends State<_Workspace> {
           child: Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: const Color(0xff1b2535),
+              color: p.sidebarCard,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: _border),
+              border: Border.all(color: p.border),
             ),
-            child: const Column(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Icon(Icons.desktop_mac_rounded, color: _accent, size: 16),
+                    Icon(Icons.desktop_mac_rounded, color: p.accent, size: 16),
                     SizedBox(width: 8),
                     Expanded(
                       child: Text(
@@ -609,18 +622,22 @@ class _WorkspaceState extends State<_Workspace> {
                 SizedBox(height: 9),
                 Text(
                   'Your address plan, on this Mac. Import offline. Plan with confidence.',
-                  style: TextStyle(color: _muted, fontSize: 11, height: 1.6),
+                  style: TextStyle(
+                    color: p.textSecondary,
+                    fontSize: 11,
+                    height: 1.6,
+                  ),
                 ),
               ],
             ),
           ),
         ),
-        const Padding(
+        Padding(
           padding: EdgeInsets.fromLTRB(22, 0, 18, 22),
           child: Text(
             'v0.4.0  ·  MACOS PREVIEW',
             style: TextStyle(
-              color: Color(0xff68778e),
+              color: p.textFaint,
               fontSize: 9,
               letterSpacing: 1.1,
             ),
@@ -645,8 +662,8 @@ class _WorkspaceState extends State<_Workspace> {
     ];
     return Container(
       padding: const EdgeInsets.fromLTRB(26, 27, 26, 23),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: _border)),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: p.border)),
       ),
       child: Row(
         children: [
@@ -665,20 +682,30 @@ class _WorkspaceState extends State<_Workspace> {
                 const SizedBox(height: 7),
                 Text(
                   subtitles[c.page],
-                  style: const TextStyle(color: _muted, fontSize: 12),
+                  style: TextStyle(color: p.textSecondary, fontSize: 12),
                 ),
               ],
             ),
           ),
           IconButton(
+            key: const ValueKey('open-settings'),
+            tooltip: 'Settings',
+            onPressed: _openSettings,
+            icon: Icon(
+              Icons.settings_outlined,
+              size: 20,
+              color: p.textSecondary,
+            ),
+          ),
+          IconButton(
             tooltip: 'Help and examples',
             onPressed: () => showAtlasHelp(context),
-            icon: const Icon(Icons.help_outline, size: 20, color: _muted),
+            icon: Icon(Icons.help_outline, size: 20, color: p.textSecondary),
           ),
           IconButton(
             tooltip: 'Refresh from local database',
             onPressed: () => _guard(c.refresh),
-            icon: const Icon(Icons.refresh_rounded, size: 20, color: _muted),
+            icon: Icon(Icons.refresh_rounded, size: 20, color: p.textSecondary),
           ),
           const SizedBox(width: 5),
           OutlinedButton.icon(
@@ -703,7 +730,7 @@ class _WorkspaceState extends State<_Workspace> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               decoration: BoxDecoration(
-                border: Border.all(color: _border),
+                border: Border.all(color: p.border),
                 borderRadius: BorderRadius.circular(9),
               ),
               child: const Row(
@@ -742,7 +769,7 @@ class _WorkspaceState extends State<_Workspace> {
                 'TOTAL PREFIXES',
                 '${c.records.length}',
                 Icons.lan_outlined,
-                _accent,
+                p.accent,
               ),
             ),
             const SizedBox(width: 12),
@@ -751,7 +778,7 @@ class _WorkspaceState extends State<_Workspace> {
                 'ACTIVE',
                 '${c.records.where((r) => r.status == PrefixStatus.active).length}',
                 Icons.radio_button_checked,
-                const Color(0xff77d8b4),
+                p.success,
               ),
             ),
             const SizedBox(width: 12),
@@ -760,7 +787,7 @@ class _WorkspaceState extends State<_Workspace> {
                 'PLANNED / RESERVED',
                 '${c.records.where((r) => r.status == PrefixStatus.planned || r.status == PrefixStatus.reserved).length}',
                 Icons.bookmark_border,
-                const Color(0xffdbc18b),
+                p.reserved,
               ),
             ),
             const SizedBox(width: 12),
@@ -769,9 +796,7 @@ class _WorkspaceState extends State<_Workspace> {
                 'CONFLICTS',
                 '${c.conflicts.length}',
                 Icons.shield_outlined,
-                c.conflicts.isEmpty
-                    ? const Color(0xff77d8b4)
-                    : const Color(0xffff8c8c),
+                c.conflicts.isEmpty ? p.success : p.danger,
               ),
             ),
           ],
@@ -891,9 +916,9 @@ class _WorkspaceState extends State<_Workspace> {
       Container(
         padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: _surface,
+          color: p.surface,
           borderRadius: BorderRadius.circular(11),
-          border: Border.all(color: _border),
+          border: Border.all(color: p.border),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -903,10 +928,10 @@ class _WorkspaceState extends State<_Workspace> {
                 Expanded(
                   child: Text(
                     title,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 9,
                       letterSpacing: 1.1,
-                      color: _muted,
+                      color: p.textSecondary,
                     ),
                   ),
                 ),
@@ -939,13 +964,13 @@ class _WorkspaceState extends State<_Workspace> {
               width: 80,
               height: 80,
               decoration: BoxDecoration(
-                color: const Color(0xff1d2b42),
+                color: p.emptyTile,
                 borderRadius: BorderRadius.circular(24),
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.account_tree_outlined,
                 size: 38,
-                color: _accent,
+                color: p.accent,
               ),
             ),
             const SizedBox(height: 24),
@@ -958,10 +983,14 @@ class _WorkspaceState extends State<_Workspace> {
               ),
             ),
             const SizedBox(height: 12),
-            const Text(
+            Text(
               'Import an OCI inventory or reserve your first prefix. Keep allocations, VCNs, and subnets together in one place.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: _muted, height: 1.7, fontSize: 14),
+              style: TextStyle(
+                color: p.textSecondary,
+                height: 1.7,
+                fontSize: 14,
+              ),
             ),
             const SizedBox(height: 25),
             Wrap(
@@ -983,9 +1012,9 @@ class _WorkspaceState extends State<_Workspace> {
             const SizedBox(height: 22),
             TextButton(
               onPressed: () => _guard(c.loadDemo),
-              child: const Text(
+              child: Text(
                 'Explore with fictional sample data',
-                style: TextStyle(color: _muted, fontSize: 12),
+                style: TextStyle(color: p.textSecondary, fontSize: 12),
               ),
             ),
           ],
@@ -999,8 +1028,8 @@ class _WorkspaceState extends State<_Workspace> {
     return Container(
       margin: const EdgeInsets.fromLTRB(26, 0, 26, 24),
       decoration: BoxDecoration(
-        color: _surface,
-        border: Border.all(color: _border),
+        color: p.surface,
+        border: Border.all(color: p.border),
         borderRadius: BorderRadius.circular(11),
       ),
       child: Column(
@@ -1018,12 +1047,12 @@ class _WorkspaceState extends State<_Workspace> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Select a row to inspect',
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,
-                    style: TextStyle(color: _muted, fontSize: 11),
+                    style: TextStyle(color: p.textSecondary, fontSize: 11),
                   ),
                 ),
                 if (c.hasDemoRecords)
@@ -1041,10 +1070,10 @@ class _WorkspaceState extends State<_Workspace> {
                   tooltip: 'Clear inventory…',
                   visualDensity: VisualDensity.compact,
                   onPressed: c.records.isEmpty ? null : _clearInventory,
-                  icon: const Icon(
+                  icon: Icon(
                     Icons.delete_forever_outlined,
                     size: 18,
-                    color: _muted,
+                    color: p.textSecondary,
                   ),
                 ),
                 Tooltip(
@@ -1057,7 +1086,7 @@ class _WorkspaceState extends State<_Workspace> {
                           ? Icons.table_rows_outlined
                           : Icons.account_tree_outlined,
                       size: 18,
-                      color: _accent,
+                      color: p.accent,
                     ),
                   ),
                 ),
@@ -1067,14 +1096,19 @@ class _WorkspaceState extends State<_Workspace> {
           const Divider(height: 1),
           Expanded(
             child: records.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
                       'No prefixes match your filters.',
-                      style: TextStyle(color: _muted),
+                      style: TextStyle(color: p.textSecondary),
                     ),
                   )
                 : _tree
-                ? ListView(children: _hierarchy(records))
+                // Tiles paint their ink on this transparent Material rather
+                // than behind the table's coloured box.
+                ? Material(
+                    type: MaterialType.transparency,
+                    child: ListView(children: _hierarchy(records)),
+                  )
                 : LayoutBuilder(
                     builder: (context, constraints) => SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
@@ -1105,43 +1139,63 @@ class _WorkspaceState extends State<_Workspace> {
 
   Widget _tableHeader() => Container(
     height: 36,
-    color: const Color(0xff141b28),
+    color: p.tableHeader,
     padding: const EdgeInsets.symmetric(horizontal: 16),
-    child: const Row(
+    child: Row(
       children: [
         SizedBox(
           width: 164,
           child: Text(
             'PREFIX / KIND',
-            style: TextStyle(color: _muted, fontSize: 9, letterSpacing: 1),
+            style: TextStyle(
+              color: p.textSecondary,
+              fontSize: 9,
+              letterSpacing: 1,
+            ),
           ),
         ),
         Expanded(
           flex: 3,
           child: Text(
             'NAME',
-            style: TextStyle(color: _muted, fontSize: 9, letterSpacing: 1),
+            style: TextStyle(
+              color: p.textSecondary,
+              fontSize: 9,
+              letterSpacing: 1,
+            ),
           ),
         ),
         Expanded(
           flex: 2,
           child: Text(
             'ROUTING DOMAIN',
-            style: TextStyle(color: _muted, fontSize: 9, letterSpacing: 1),
+            style: TextStyle(
+              color: p.textSecondary,
+              fontSize: 9,
+              letterSpacing: 1,
+            ),
           ),
         ),
         SizedBox(
           width: 108,
           child: Text(
             'REGION',
-            style: TextStyle(color: _muted, fontSize: 9, letterSpacing: 1),
+            style: TextStyle(
+              color: p.textSecondary,
+              fontSize: 9,
+              letterSpacing: 1,
+            ),
           ),
         ),
         SizedBox(
           width: 87,
           child: Text(
             'STATUS',
-            style: TextStyle(color: _muted, fontSize: 9, letterSpacing: 1),
+            style: TextStyle(
+              color: p.textSecondary,
+              fontSize: 9,
+              letterSpacing: 1,
+            ),
           ),
         ),
         SizedBox(width: 28),
@@ -1185,9 +1239,7 @@ class _WorkspaceState extends State<_Workspace> {
   }
 
   Widget _tableRow(PrefixRecord record) => Material(
-    color: c.selectedId == record.id
-        ? const Color(0xff23334e)
-        : Colors.transparent,
+    color: c.selectedId == record.id ? p.rowSelected : Colors.transparent,
     child: InkWell(
       onTap: () {
         c.select(record.id);
@@ -1199,8 +1251,8 @@ class _WorkspaceState extends State<_Workspace> {
       child: Container(
         height: 67,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        decoration: const BoxDecoration(
-          border: Border(bottom: BorderSide(color: Color(0xff232c3d))),
+        decoration: BoxDecoration(
+          border: Border(bottom: BorderSide(color: p.rowDivider)),
         ),
         child: Row(
           children: [
@@ -1223,7 +1275,7 @@ class _WorkspaceState extends State<_Workspace> {
                     record.kind == PrefixKind.vcn
                         ? 'VCN'
                         : atlasLabel(record.kind.name),
-                    style: const TextStyle(color: _muted, fontSize: 10),
+                    style: TextStyle(color: p.textSecondary, fontSize: 10),
                   ),
                 ],
               ),
@@ -1246,7 +1298,7 @@ class _WorkspaceState extends State<_Workspace> {
                       Text(
                         record.owner,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: _muted, fontSize: 10),
+                        style: TextStyle(color: p.textSecondary, fontSize: 10),
                       ),
                     ],
                   ],
@@ -1260,7 +1312,7 @@ class _WorkspaceState extends State<_Workspace> {
                 child: Text(
                   record.routingDomain,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 11, color: _muted),
+                  style: TextStyle(fontSize: 11, color: p.textSecondary),
                 ),
               ),
             ),
@@ -1269,7 +1321,7 @@ class _WorkspaceState extends State<_Workspace> {
               child: Text(
                 record.region.isEmpty ? '—' : record.region,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 10, color: _muted),
+                style: TextStyle(fontSize: 10, color: p.textSecondary),
               ),
             ),
             SizedBox(
@@ -1279,7 +1331,7 @@ class _WorkspaceState extends State<_Workspace> {
                 child: _statusBadge(record.status),
               ),
             ),
-            const Icon(Icons.chevron_right, size: 18, color: _muted),
+            Icon(Icons.chevron_right, size: 18, color: p.textSecondary),
           ],
         ),
       ),
@@ -1305,7 +1357,7 @@ class _WorkspaceState extends State<_Workspace> {
                 ? Icons.segment
                 : Icons.lan_outlined,
             size: 18,
-            color: _accent,
+            color: p.accent,
           ),
           title: Text(
             '${record.cidr}  ·  ${record.name}',
@@ -1321,7 +1373,7 @@ class _WorkspaceState extends State<_Workspace> {
       }
       return ExpansionTile(
         initiallyExpanded: true,
-        leading: const Icon(Icons.folder_outlined, size: 18, color: _accent),
+        leading: Icon(Icons.folder_outlined, size: 18, color: p.accent),
         title: Text(
           '${record.cidr}  ·  ${record.name}',
           style: const TextStyle(fontSize: 12),
@@ -1333,7 +1385,7 @@ class _WorkspaceState extends State<_Workspace> {
         trailing: IconButton(
           tooltip: 'Inspect prefix',
           onPressed: () => _inspect(record),
-          icon: const Icon(Icons.info_outline, size: 18, color: _accent),
+          icon: Icon(Icons.info_outline, size: 18, color: p.accent),
         ),
         childrenPadding: const EdgeInsets.only(left: 20),
         children: [
@@ -1351,10 +1403,10 @@ class _WorkspaceState extends State<_Workspace> {
 
   Widget _statusBadge(PrefixStatus status) {
     final color = switch (status) {
-      PrefixStatus.active => const Color(0xff77d8b4),
-      PrefixStatus.reserved => const Color(0xffdbc18b),
-      PrefixStatus.planned => _accent,
-      PrefixStatus.retired => _muted,
+      PrefixStatus.active => p.success,
+      PrefixStatus.reserved => p.reserved,
+      PrefixStatus.planned => p.accent,
+      PrefixStatus.retired => p.textSecondary,
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
@@ -1370,9 +1422,9 @@ class _WorkspaceState extends State<_Workspace> {
   }
 
   Widget _details(PrefixRecord record) => Container(
-    decoration: const BoxDecoration(
-      color: Color(0xff141c28),
-      border: Border(left: BorderSide(color: _border)),
+    decoration: BoxDecoration(
+      color: p.detailsPanel,
+      border: Border(left: BorderSide(color: p.border)),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1381,10 +1433,10 @@ class _WorkspaceState extends State<_Workspace> {
           padding: const EdgeInsets.fromLTRB(20, 20, 12, 14),
           child: Row(
             children: [
-              const Text(
+              Text(
                 'PREFIX DETAILS',
                 style: TextStyle(
-                  color: _muted,
+                  color: p.textSecondary,
                   letterSpacing: 1.3,
                   fontSize: 10,
                 ),
@@ -1406,8 +1458,8 @@ class _WorkspaceState extends State<_Workspace> {
               children: [
                 SelectableText(
                   record.cidr,
-                  style: const TextStyle(
-                    color: _accent,
+                  style: TextStyle(
+                    color: p.accent,
                     fontFamily: 'monospace',
                     fontSize: 21,
                     fontWeight: FontWeight.w600,
@@ -1465,8 +1517,8 @@ class _WorkspaceState extends State<_Workspace> {
                         children: [
                           Text(
                             field[0].toUpperCase(),
-                            style: const TextStyle(
-                              color: _muted,
+                            style: TextStyle(
+                              color: p.textSecondary,
                               fontSize: 9,
                               letterSpacing: .8,
                             ),
@@ -1487,14 +1539,10 @@ class _WorkspaceState extends State<_Workspace> {
           padding: const EdgeInsets.all(16),
           child: OutlinedButton.icon(
             onPressed: () => _delete(record),
-            icon: const Icon(
-              Icons.delete_outline,
-              size: 16,
-              color: Color(0xffff8c8c),
-            ),
-            label: const Text(
+            icon: Icon(Icons.delete_outline, size: 16, color: p.danger),
+            label: Text(
               'Delete prefix',
-              style: TextStyle(color: Color(0xffff8c8c), fontSize: 12),
+              style: TextStyle(color: p.danger, fontSize: 12),
             ),
           ),
         ),
@@ -1503,11 +1551,11 @@ class _WorkspaceState extends State<_Workspace> {
   );
 
   Widget _conflicts() => c.conflicts.isEmpty
-      ? const Center(
+      ? Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.verified_outlined, size: 54, color: Color(0xff77d8b4)),
+              Icon(Icons.verified_outlined, size: 54, color: p.success),
               SizedBox(height: 20),
               Text(
                 'No routing conflicts found',
@@ -1519,7 +1567,7 @@ class _WorkspaceState extends State<_Workspace> {
                 child: Text(
                   'Checks use the local register and explicit parent relationships. Confirm import coverage before treating a range as available.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: _muted, height: 1.7),
+                  style: TextStyle(color: p.textSecondary, height: 1.7),
                 ),
               ),
             ],
@@ -1539,8 +1587,8 @@ class _WorkspaceState extends State<_Workspace> {
                 margin: const EdgeInsets.only(bottom: 14),
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: _surface,
-                  border: Border.all(color: _border),
+                  color: p.surface,
+                  border: Border.all(color: p.border),
                   borderRadius: BorderRadius.circular(11),
                 ),
                 child: Column(
@@ -1548,9 +1596,9 @@ class _WorkspaceState extends State<_Workspace> {
                   children: [
                     Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.warning_amber_rounded,
-                          color: Color(0xffff8c8c),
+                          color: p.danger,
                           size: 19,
                         ),
                         const SizedBox(width: 10),
@@ -1559,10 +1607,10 @@ class _WorkspaceState extends State<_Workspace> {
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                         const Spacer(),
-                        const Text(
+                        Text(
                           'OVERLAP',
                           style: TextStyle(
-                            color: Color(0xffff8c8c),
+                            color: p.danger,
                             fontSize: 10,
                             letterSpacing: 1,
                           ),
@@ -1579,9 +1627,9 @@ class _WorkspaceState extends State<_Workspace> {
                               width: 190,
                               child: SelectableText(
                                 record.cidr,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontFamily: 'monospace',
-                                  color: _accent,
+                                  color: p.accent,
                                 ),
                               ),
                             ),
@@ -1596,8 +1644,8 @@ class _WorkspaceState extends State<_Workspace> {
                     const SizedBox(height: 5),
                     Text(
                       conflict.reason,
-                      style: const TextStyle(
-                        color: _muted,
+                      style: TextStyle(
+                        color: p.textSecondary,
                         fontSize: 12,
                         height: 1.5,
                       ),
@@ -1609,10 +1657,10 @@ class _WorkspaceState extends State<_Workspace> {
         );
 
   Widget _history() => c.history.isEmpty
-      ? const Center(
+      ? Center(
           child: Text(
             'Inventory changes will appear here.',
-            style: TextStyle(color: _muted),
+            style: TextStyle(color: p.textSecondary),
           ),
         )
       : ListView.separated(
@@ -1629,7 +1677,7 @@ class _WorkspaceState extends State<_Workspace> {
                       child: Text(
                         'Showing the latest ${c.history.length} changes. '
                         'Older changes remain in the local database.',
-                        style: const TextStyle(color: _muted, fontSize: 12),
+                        style: TextStyle(color: p.textSecondary, fontSize: 12),
                       ),
                     ),
                     OutlinedButton(
@@ -1650,26 +1698,22 @@ class _WorkspaceState extends State<_Workspace> {
               leading: Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: _surface,
+                  color: p.surface,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(
-                  Icons.history_rounded,
-                  size: 20,
-                  color: _accent,
-                ),
+                child: Icon(Icons.history_rounded, size: 20, color: p.accent),
               ),
               title: Text(entry.summary, style: const TextStyle(fontSize: 13)),
               subtitle: Padding(
                 padding: const EdgeInsets.only(top: 7),
                 child: Text(
                   entry.action,
-                  style: const TextStyle(color: _muted, fontSize: 11),
+                  style: TextStyle(color: p.textSecondary, fontSize: 11),
                 ),
               ),
               trailing: Text(
                 entry.at.toLocal().toString().split('.').first,
-                style: const TextStyle(color: _muted, fontSize: 11),
+                style: TextStyle(color: p.textSecondary, fontSize: 11),
               ),
             );
           },

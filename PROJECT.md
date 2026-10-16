@@ -164,10 +164,12 @@ Unreleased remediation, verified 2026-10-16 on the working tree:
 - OCI adapter: 110 tests passed (v0.3.0: 83; before the remediation this machine
   ran 82 plus one failure that depended on `PUB_CACHE` being set, now fixed).
 - CLI: 98 tests passed (v0.3.0: 49), rerun after adding `clear`.
-- Flutter: 130 widget tests passed (v0.3.0: 72), rerun after adding clear
-  inventory, the progress panel and the all-compartments retry.
+- Flutter: 176 widget tests passed (v0.3.0: 72), rerun after adding clear
+  inventory, the progress panel, the all-compartments retry and the
+  System/Light/Dark appearance setting (palette, persistence, Settings dialog,
+  light/dark builds of the main screens and WCAG contrast checks).
 
-All 534 package/widget tests passed (core, data and OCI adapter counts are from
+All 580 package/widget tests passed (core, data and OCI adapter counts are from
 the remediation run; those packages are unchanged since). `dart format --set-exit-if-changed` changed no
 files in any package, and `dart analyze` / `flutter analyze` reported no issues
 under the stricter lint configuration. Tests use fictional runners, isolated
@@ -258,9 +260,9 @@ data and CLI) are lower than the lockfiles resolve (>=3.11.0); raising them to
 
 ## Next actions
 
-Check the centred progress panel, Clear inventory and the all-compartments retry
-in the native 0.4.0 build, then publish 0.4.0 following
-[docs/releasing.md](docs/releasing.md). Add the light/dark/system theme setting. Decisions recorded in the remediation plan:
+Check the centred progress panel, Clear inventory, the all-compartments retry
+and the appearance setting in the native 0.4.0 build, then publish 0.4.0 following
+[docs/releasing.md](docs/releasing.md). Decisions recorded in the remediation plan:
 
 - All-compartments mode: continue past a compartment that denies network listing
   and record it as unobserved coverage, instead of failing the whole collection

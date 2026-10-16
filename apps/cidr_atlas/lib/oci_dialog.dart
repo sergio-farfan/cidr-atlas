@@ -7,6 +7,7 @@ import 'package:cidr_oci/cidr_oci.dart';
 import 'package:flutter/material.dart';
 
 import 'help.dart';
+import 'theme.dart';
 
 class OciImportSelection {
   const OciImportSelection({
@@ -1125,7 +1126,7 @@ class _OciProgressOverlayState extends State<_OciProgressOverlay> {
     return Stack(
       key: const ValueKey('oci-progress-overlay'),
       children: [
-        const ModalBarrier(dismissible: false, color: Color(0x9910151f)),
+        ModalBarrier(dismissible: false, color: context.palette.barrier),
         Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(16),

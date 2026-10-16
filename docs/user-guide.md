@@ -255,3 +255,20 @@ database in one change; history is kept and OCI is not touched. Discovering or
 importing again restores observed networks, but not local planning fields such
 as owner, status and notes. If `cidrctl` changed the inventory after the dialog
 opened, nothing is deleted and the current records are shown for review.
+
+## Appearance
+
+Open **Settings** with the gear icon in the workspace header, **CIDR Atlas >
+Settings…** or ⌘, (Command-comma). Under **Appearance**, choose:
+
+- **System** (the default) to follow the current macOS appearance, including
+  automatic switching during the day;
+- **Light** for the light theme;
+- **Dark** for the original dark theme.
+
+The choice applies immediately, without closing Settings or reopening the app,
+and is remembered for the next launch. It is kept in the app's user defaults
+(domain `dev.cidratlas.desktop`, key `theme.appearance`), not in the inventory
+database, so exports, imports and **Clear inventory…** do not change it and
+`cidrctl` does not read it. `defaults delete dev.cidratlas.desktop theme.appearance` resets it to
+System.

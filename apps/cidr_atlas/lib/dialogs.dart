@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 
 import 'oci_dialog.dart';
 import 'help.dart';
+import 'theme.dart';
 
 String atlasLabel(String value) =>
     value.isEmpty ? value : '${value[0].toUpperCase()}${value.substring(1)}';
@@ -38,6 +39,7 @@ class RecordEditor extends StatefulWidget {
 }
 
 class _RecordEditorState extends State<RecordEditor> {
+  AtlasPalette get p => context.palette;
   final _form = GlobalKey<FormState>();
   late final Map<String, TextEditingController> _fields;
   late PrefixKind _kind;
@@ -242,9 +244,9 @@ class _RecordEditorState extends State<RecordEditor> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
+                Text(
                   'One record per CIDR. Overlaps remain visible in Conflicts; hierarchy must be explicitly declared.',
-                  style: TextStyle(color: Color(0xff98a6bc), fontSize: 13),
+                  style: TextStyle(color: p.textSecondary, fontSize: 13),
                 ),
                 if (_observed) ...[
                   const SizedBox(height: 14),
@@ -436,11 +438,12 @@ class MessagePanel extends StatelessWidget {
   final bool success;
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final color = error
-        ? const Color(0xffff8c8c)
+        ? p.danger
         : success
-        ? const Color(0xff77d8b4)
-        : const Color(0xffe6c583);
+        ? p.success
+        : p.warning;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -483,6 +486,7 @@ class CheckerDialog extends StatefulWidget {
 }
 
 class _CheckerDialogState extends State<CheckerDialog> {
+  AtlasPalette get p => context.palette;
   final _cidr = TextEditingController();
   late final TextEditingController _domain;
   String _parent = '';
@@ -555,9 +559,9 @@ class _CheckerDialogState extends State<CheckerDialog> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
+            Text(
               'Compare a proposed prefix with the local register. Only prefixes in the same routing domain can conflict.',
-              style: TextStyle(color: Color(0xff98a6bc), height: 1.5),
+              style: TextStyle(color: p.textSecondary, height: 1.5),
             ),
             const SizedBox(height: 22),
             TextField(
@@ -668,6 +672,7 @@ class ImportDialog extends StatefulWidget {
 }
 
 class _ImportDialogState extends State<ImportDialog> {
+  AtlasPalette get p => context.palette;
   late final TextEditingController _domain;
   String? _text;
   String? _filename;
@@ -840,9 +845,9 @@ class _ImportDialogState extends State<ImportDialog> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'Preview a CSV, CIDR Atlas JSON backup, or OCI inventory before saving. OCI discovery reads existing network CIDRs automatically; no manual CIDR is needed here. Existing records absent from the import are retained.',
-                  style: TextStyle(color: Color(0xff98a6bc), height: 1.5),
+                  style: TextStyle(color: p.textSecondary, height: 1.5),
                 ),
                 const SizedBox(height: 20),
                 Row(
@@ -857,7 +862,7 @@ class _ImportDialogState extends State<ImportDialog> {
                       child: Text(
                         _filename ?? 'No file selected',
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Color(0xff98a6bc)),
+                        style: TextStyle(color: p.textSecondary),
                       ),
                     ),
                   ],
@@ -1004,8 +1009,8 @@ class _ImportDialogState extends State<ImportDialog> {
                                   const SizedBox(width: 12),
                                   Text(
                                     record.routingDomain,
-                                    style: const TextStyle(
-                                      color: Color(0xff98a6bc),
+                                    style: TextStyle(
+                                      color: p.textSecondary,
                                       fontSize: 12,
                                     ),
                                   ),

@@ -68,6 +68,14 @@ The initial release retains the ad hoc signature and has no Developer ID signatu
 
 ## Requested next action
 
+The proposed next feature is a visual Address Space workspace, shared CIDR
+inspector, and explainable right-sized CIDR recommendations. The design in
+`docs/superpowers/specs/2026-10-15-visual-network-planning-design.md` incorporates
+the requested calculator details, open-slot highlighting, community research,
+and Oracle planning guidance. Its first milestone uses existing inventory;
+observed topology connections are a subsequent milestone. The proposal has
+passed a builder check and remains subject to scope review before implementation.
+
 The next operational check is an explicitly selected existing OCI profile, region, compartment, and routing domain against live OCI, keeping any observed inventory outside the repository. Complete remaining native file-dialog checks and plan Developer ID signing/notarization before wider macOS distribution.
 
 Keep credentials, customer inventories, generated builds, and machine-specific SDK paths out of Git.

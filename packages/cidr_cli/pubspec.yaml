@@ -10,6 +10,8 @@ dependencies:
     path: ../cidr_core
   cidr_data:
     path: ../cidr_data
+  cidr_oci:
+    path: ../cidr_oci
 dev_dependencies:
   test: ^1.25.0
 executables:

@@ -1,13 +1,134 @@
+// CIDR Atlas command parsing, inventory workflows, and OCI discovery.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
 import 'package:cidr_core/cidr_core.dart';
 import 'package:cidr_data/cidr_data.dart';
+import 'package:cidr_oci/cidr_oci.dart';
 
 const _version = '0.1.0';
+
+/// Runs desktop commands, including asynchronous OCI discovery.
+Future<int> runCidrctlAsync(
+  List<String> arguments, {
+  StringSink? out,
+  StringSink? err,
+  Map<String, String>? environment,
+  OciInventoryClient? ociClient,
+  OciCancellation? cancellation,
+}) async {
+  final output = out ?? stdout;
+  final errors = err ?? stderr;
+  final parser = _parser();
+  late ArgResults root;
+  try {
+    root = parser.parse(arguments);
+  } on FormatException {
+    return runCidrctl(arguments, out: out, err: err, environment: environment);
+  }
+  try {
+    final command = root.command;
+    if (command?.name != 'discover' ||
+        (root['help'] as bool) ||
+        (root['version'] as bool)) {
+      return runCidrctl(arguments,
+          out: out, err: err, environment: environment);
+    }
+    if (command!['help'] as bool) {
+      _usage(parser.commands['discover']!, output, command: 'discover');
+      return 0;
+    }
+    if (command.rest.length != 1 || command.rest.single != 'oci') {
+      throw const FormatException('Discovery type must be oci.');
+    }
+    for (final key in [
+      'profile',
+      'region',
+      'compartment-id',
+      'routing-domain'
+    ]) {
+      _required(command, key);
+    }
+  } on FormatException catch (error) {
+    errors.writeln('Usage error: ${error.message}');
+    errors.writeln('Run cidrctl discover oci --help.');
+    return 2;
+  }
+  final command = root.command!;
+  final token = cancellation ?? OciCancellation();
+  StreamSubscription<ProcessSignal>? interrupt;
+  InventoryStore? store;
+  try {
+    _checkCancellation(token);
+    interrupt = ProcessSignal.sigint.watch().listen((_) => token.cancel());
+    final client = ociClient ?? OciCliClient();
+    final auth = switch (command['auth'] as String?) {
+      'api_key' => OciAuthMode.apiKey,
+      'security_token' => OciAuthMode.securityToken,
+      _ => null,
+    };
+    final connection = await client.connection(
+      profile: _required(command, 'profile'),
+      configFile: command['config-file'] as String?,
+      executable: command['oci-bin'] as String?,
+      authMode: auth,
+    );
+    _checkCancellation(token);
+    final discovery = await client.discover(
+      connection,
+      region: _required(command, 'region'),
+      compartmentId: _required(command, 'compartment-id'),
+      cancellation: token,
+      onProgress: errors.writeln,
+    );
+    _checkCancellation(token);
+    final db = (command['db'] as String?) ??
+        (root['db'] as String?) ??
+        defaultDatabasePath(environment ?? Platform.environment);
+    store = InventoryStore.open(db);
+    final preview = InventoryImport.json(
+      discovery.bundleJson,
+      routingDomain: _required(command, 'routing-domain'),
+      existingRecords: store.list(),
+    );
+    for (final warning in discovery.warnings) {
+      output.writeln('Warning: $warning');
+    }
+    _checkCancellation(token);
+    return _applyPreview(
+        store, preview, command['apply'] as bool, output, errors);
+  } on OciException catch (error) {
+    errors.writeln('Discovery failed: ${error.message}');
+    return 1;
+  } on FormatException {
+    errors.writeln(
+        'Discovery returned invalid inventory. No records were changed.');
+    return 1;
+  } on FileSystemException {
+    errors.writeln(
+        'Discovery could not access a required file. Check paths and permissions.');
+    return 1;
+  } catch (_) {
+    errors.writeln(
+        'Discovery failed. Check OCI configuration and database access.');
+    return 1;
+  } finally {
+    store?.close();
+    await interrupt?.cancel();
+  }
+}
+
+void _checkCancellation(OciCancellation cancellation) {
+  if (cancellation.isCancelled) {
+    throw const OciException('Discovery cancelled. No records were changed.');
+  }
+}
 
 /// Runs a command without terminating the host process.
 ///
@@ -42,6 +163,10 @@ int runCidrctl(
     if (command['help'] as bool) {
       _usage(commandParser, output, command: command.name);
       return 0;
+    }
+    if (command.name == 'discover') {
+      throw const FormatException(
+          'Discovery requires the asynchronous CLI entrypoint.');
     }
     final db = (command['db'] as String?) ??
         (root['db'] as String?) ??
@@ -239,6 +364,19 @@ ArgParser _parser() {
     ..addFlag('apply',
         negatable: false,
         help: 'Write the preview after successful validation.');
+  command('discover')
+    ..addOption('profile', help: 'Required OCI configuration profile.')
+    ..addOption('region', help: 'Required OCI region.')
+    ..addOption('compartment-id', help: 'Required OCI compartment OCID.')
+    ..addOption('routing-domain', help: 'Required conflict-checking scope.')
+    ..addOption('config-file', help: 'OCI configuration file override.')
+    ..addOption('oci-bin', help: 'OCI executable path override.')
+    ..addOption('auth',
+        allowed: ['api_key', 'security_token'],
+        help: 'Authentication override; otherwise use profile authentication.')
+    ..addFlag('apply',
+        negatable: false,
+        help: 'Write after successful discovery and import validation.');
   final exporting = command('export');
   filters(exporting);
   exporting
@@ -255,11 +393,12 @@ void _usage(ArgParser parser, StringSink output, {String? command}) {
     output.writeln('CIDR Atlas command line interface $_version');
     output.writeln('Usage: cidrctl [--db PATH] <command> [options]');
     output.writeln('Commands: list, check <CIDR>, reserve <CIDR>, '
-        'import [csv|json|oci], export, history');
+        'import [csv|json|oci], discover oci, export, history');
   } else {
     output.writeln('Usage: cidrctl $command '
         '${command == 'check' || command == 'reserve' ? '<CIDR> ' : ''}'
-        '${command == 'import' ? '[csv|json|oci] ' : ''}[options]');
+        '${command == 'import' ? '[csv|json|oci] ' : ''}'
+        '${command == 'discover' ? 'oci ' : ''}[options]');
   }
   output.writeln(parser.usage);
 }
@@ -392,6 +531,12 @@ int _import(InventoryStore store, ArgResults command, StringSink output,
       ? InventoryImport.csv(source, existingRecords: existing)
       : InventoryImport.json(source,
           routingDomain: domain, existingRecords: existing);
+  return _applyPreview(
+      store, preview, command['apply'] as bool, output, errors);
+}
+
+int _applyPreview(InventoryStore store, ImportPreview preview, bool apply,
+    StringSink output, StringSink errors) {
   output.writeln('Import preview: ${preview.records.length} records '
       '(${preview.source}).');
   for (final warning in preview.warnings) {
@@ -417,7 +562,7 @@ int _import(InventoryStore store, ArgResults command, StringSink output,
     output.writeln('Warning: merged inventory has ${conflicts.length} '
         'conflict(s). Imported conflicts remain available for review.');
   }
-  if (!(command['apply'] as bool)) {
+  if (!apply) {
     output.writeln('Preview only. Add --apply to save these records.');
     return 0;
   }

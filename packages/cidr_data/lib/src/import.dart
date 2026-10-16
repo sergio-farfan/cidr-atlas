@@ -8,6 +8,8 @@ import 'package:cidr_core/cidr_core.dart';
 import 'package:csv/csv.dart';
 
 class ImportPreview {
+  static const emptyRecordsMessage = 'Import contains no prefix records.';
+
   ImportPreview({
     required List<PrefixRecord> records,
     List<String> errors = const [],
@@ -22,6 +24,8 @@ class ImportPreview {
   final List<String> warnings;
   final String source;
   bool get canApply => records.isNotEmpty && errors.isEmpty;
+  bool get isEmptyResult =>
+      records.isEmpty && errors.every((error) => error == emptyRecordsMessage);
 }
 
 abstract final class InventoryImport {
@@ -476,7 +480,7 @@ abstract final class InventoryImport {
     final completeErrors = [...errors, ...InventoryRules.validate(combined)];
     final completeWarnings = [...warnings];
     if (records.isEmpty && completeErrors.isEmpty)
-      completeErrors.add('Import contains no prefix records.');
+      completeErrors.add(ImportPreview.emptyRecordsMessage);
     if (completeErrors.isEmpty) {
       // Store reconciliation can fold imported OCI ids into existing manual
       // ids. Count parser warnings only within the incoming batch; callers

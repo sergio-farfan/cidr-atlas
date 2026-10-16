@@ -580,7 +580,7 @@ class _WorkspaceState extends State<_Workspace> {
         const Padding(
           padding: EdgeInsets.fromLTRB(22, 0, 18, 22),
           child: Text(
-            'v0.3.0  ·  MACOS PREVIEW',
+            'v0.4.0  ·  MACOS PREVIEW',
             style: TextStyle(
               color: Color(0xff68778e),
               fontSize: 9,

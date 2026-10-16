@@ -21,7 +21,7 @@ import 'src/routing_domains.dart';
 // exposing the name it published before.
 export 'package:cidr_data/cidr_data.dart' show defaultDatabasePath;
 
-const _version = '0.3.0';
+const _version = '0.4.0';
 
 /// Runs desktop commands, including asynchronous OCI discovery.
 Future<int> runCidrctlAsync(

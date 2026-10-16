@@ -91,12 +91,12 @@ Cancellation and collection failures throw `OciException` with safe messages; no
 
 **Interfaces:** Produces the shared interface above. Consumes dart:io/convert/async, without cidr_data/Flutter. Model and command references are in the spec.
 
-- [ ] Write failing tests for profiles/DEFAULT inheritance/API-key versus token auth, secret omission, executable discovery, safe missing-tool errors, and malformed config.
-- [ ] Run tests and confirm expected missing behavior, then implement allowlisted metadata parsing and connection resolution; never read key/token files.
-- [ ] Write failing collector tests asserting exact explicit connection flags, empty rc isolation, all-page selected-compartment VCN/subnet calls, safe OCI environment, READY region parsing, accessible compartments plus synthetic root, and no unwanted recursive resource collection.
-- [ ] Implement process execution with concurrent stream consumption, closed stdin, bounded CLI retries, per-command 60-second and collection 180-second deadlines, and cancellation that terminates/drains a process. Verify timeout/cancellation using a controlled real child as well as injected fixtures. Validate any CLI flags against installed help before use.
-- [ ] Test complete bundle metadata/interval/coverage, external VCN deduplication, denied/not-found context warnings, required-list failure, malformed output, and cancellation without partial results. Implement only the verified read-only command set.
-- [ ] Run package format/analyze/full test suite. Self-review and report exact red/green evidence. Commit only owned package files after coordinating the shared index with root.
+- [x] Write failing tests for profiles/DEFAULT inheritance/API-key versus token auth, secret omission, executable discovery, safe missing-tool errors, and malformed config.
+- [x] Run tests and confirm expected missing behavior, then implement allowlisted metadata parsing and connection resolution; never read key/token files.
+- [x] Write failing collector tests asserting exact explicit connection flags, empty rc isolation, all-page selected-compartment VCN/subnet calls, safe OCI environment, READY region parsing, accessible compartments plus synthetic root, and no unwanted recursive resource collection.
+- [x] Implement process execution with concurrent stream consumption, closed stdin, bounded CLI retries, per-command 60-second and collection 180-second deadlines, and cancellation that terminates/drains a process. Verify timeout/cancellation using a controlled real child as well as injected fixtures. Validate any CLI flags against installed help before use.
+- [x] Test complete bundle metadata/interval/coverage, external VCN deduplication, denied/not-found context warnings, required-list failure, malformed output, and cancellation without partial results. Implement only the verified read-only command set.
+- [x] Run package format/analyze/full test suite. Self-review and report exact red/green evidence. Commit only owned package files after coordinating the shared index.
 
 ### Task 2: Preserve all current OCI CIDR aliases
 
@@ -104,10 +104,10 @@ Cancellation and collection failures throw `OciException` with safe messages; no
 
 **Interfaces:** Existing InventoryImport/Store API remains unchanged. Consumed by Tasks 3/4 through the existing OCI JSON source contract.
 
-- [ ] Add failing tests for subnet `ipv4-cidr-blocks`/`ipv4CidrBlocks` and VCN `byoipv6-cidr-blocks`/`byoipv6CidrBlocks`, including legacy alias duplicates and shared resource identity.
-- [ ] Run targeted tests and confirm missing prefix assertions fail. Extend the existing normalizer's deduplicated union; do not change hierarchy or conflict rules.
-- [ ] Test an OCI refresh carrying the added fields still preserves planning metadata and absent resources, and structurally invalid data still rolls back atomically.
-- [ ] Run package format/analyze/full tests. Commit only owned data files after root coordination; report evidence.
+- [x] Add failing tests for subnet `ipv4-cidr-blocks`/`ipv4CidrBlocks` and VCN `byoipv6-cidr-blocks`/`byoipv6CidrBlocks`, including legacy alias duplicates and shared resource identity.
+- [x] Run targeted tests and confirm missing prefix assertions fail. Extend the existing normalizer's deduplicated union; do not change hierarchy or conflict rules.
+- [x] Test an OCI refresh carrying the added fields still preserves planning metadata and absent resources, and structurally invalid data still rolls back atomically.
+- [x] Run package format/analyze/full tests. Commit only owned data files after coordinated review; report evidence.
 
 ### Task 3: Native OCI discovery and shared import preview
 
@@ -115,11 +115,11 @@ Cancellation and collection failures throw `OciException` with safe messages; no
 
 **Interfaces:** Consumes OciInventoryClient above. `OciDiscoveryDialog({OciInventoryClient? client, String? domain})` returns `OciImportSelection(bundleJson, routingDomain)`. `ImportDialog` gains optional `OciInventoryClient? ociClient` for real-client default/test injection. Existing offline callers remain valid.
 
-- [ ] Add failing widget tests for entry from ImportDialog, metadata-only profile load, selecting auth/profile, explicit Load scopes, READY region selection/manual scope fallback, and required routing domain.
-- [ ] Add the dialog and OCI entry without adding a toolbar action. Use existing visual styles, bounded dropdown text, wrapping controls, and scrolling at both supported widths. Do not auto-call OCI network APIs on startup.
-- [ ] Test progress, Cancel/dispose cancellation, late results ignored, and collection errors with Apply unavailable; implement lifecycle behavior.
-- [ ] Return bundle/domain to ImportDialog and feed its current `_parse` path using `InventoryImport.json`; retain proposedRecords/mergedImportRecords, errors/conflicts/warnings, and atomic existing Apply behavior. Test preview-only/cancel leaves an in-memory store unchanged and Apply imports only when valid.
-- [ ] Run format on owned Dart files, Flutter analyze, and full widget tests at 1100×740/1440×900. Commit owned files after root coordination and report evidence.
+- [x] Add failing widget tests for entry from ImportDialog, metadata-only profile load, selecting auth/profile, explicit Load scopes, READY region selection/manual scope fallback, and required routing domain.
+- [x] Add the dialog and OCI entry without adding a toolbar action. Use existing visual styles, bounded dropdown text, wrapping controls, and scrolling at both supported widths. Do not auto-call OCI network APIs on startup.
+- [x] Test progress, Cancel/dispose cancellation, late results ignored, and collection errors with Apply unavailable; implement lifecycle behavior.
+- [x] Return bundle/domain to ImportDialog and feed its current `_parse` path using `InventoryImport.json`; retain proposedRecords/mergedImportRecords, errors/conflicts/warnings, and atomic existing Apply behavior. Test preview-only/cancel leaves an in-memory store unchanged and Apply imports only when valid.
+- [x] Run format on owned Dart files, Flutter analyze, and full widget tests at 1100×740/1440×900. Commit owned files after coordinated review and report evidence.
 
 ### Task 4: Desktop discovery CLI
 
@@ -127,19 +127,21 @@ Cancellation and collection failures throw `OciException` with safe messages; no
 
 **Interfaces:** Preserve synchronous `runCidrctl` for existing callers. Add `Future<int> runCidrctlAsync(List<String>, {StringSink? out, StringSink? err, Map<String,String>? environment, OciInventoryClient? ociClient})`; entrypoint awaits it. Existing commands delegate unchanged; new discovery uses the shared client.
 
-- [ ] Write failing tests for `discover oci` help/required flags (`--profile`, `--region`, `--compartment-id`, `--routing-domain`), overrides (`--config-file`, `--oci-bin`, `--auth api_key|security_token`), and default preview versus explicit `--apply`.
-- [ ] Implement async discovery dispatch, safe errors, progress to stderr, bundle-to-InventoryImport.json, merged preview and atomic apply; no separately persisted raw OCI dump.
-- [ ] Test required-list failure/cancellation without inventory/history changes, metadata preservation, domain isolation, absent-resource retention, conflicts remain visible, and valid/invalid apply. Keep exit 0 success/preview, 1 operation/import failure, 2 usage error; manual reserve still uses 3 for conflict.
-- [ ] Run format/analyze/full CLI tests, compile native CLI, and smoke with a controlled fictional OCI executable against a temporary DB. Commit owned CLI files after root coordination; report evidence.
+- [x] Write failing tests for `discover oci` help/required flags (`--profile`, `--region`, `--compartment-id`, `--routing-domain`), overrides (`--config-file`, `--oci-bin`, `--auth api_key|security_token`), and default preview versus explicit `--apply`.
+- [x] Implement async discovery dispatch, safe errors, progress to stderr, bundle-to-InventoryImport.json, merged preview and atomic apply; no separately persisted raw OCI dump.
+- [x] Test required-list failure/cancellation without inventory/history changes, metadata preservation, domain isolation, absent-resource retention, conflicts remain visible, and valid/invalid apply. Keep exit 0 success/preview, 1 operation/import failure, 2 usage error; manual reserve still uses 3 for conflict.
+- [x] Run format/analyze/full CLI tests, compile native CLI, and smoke with a controlled fictional OCI executable against a temporary DB. Commit owned CLI files after coordinated review; report evidence.
 
 ### Task 5: Integrated verification, documentation, and private repository
 
-**Files:** Update README.md, PROJECT.md, docs/CONTRACT.md, docs/architecture.md and this plan's checkboxes with actual outcomes. No invented live verification.
+**Files:** Update README.md, PROJECT.md, docs/CONTRACT.md, docs/architecture.md, scripts/build_dmg.sh, and this plan's checkboxes with actual outcomes. No invented live verification.
 
 **Interfaces:** Consumes completed Tasks 1–4, existing build scripts, GitHub identity `sergio-farfan`.
 
-- [ ] Review each task's spec compliance and code quality with an independent task reviewer and resolve material findings. Review the whole integrated branch afterward.
-- [ ] Run all shared-package analyzers/tests and Flutter analyzer/widget suite; build native app/CLI. Native smoke uses fictional profiles/executables until the user chooses a real connection and scope. Do not claim live OCI/IAM success from fixtures.
-- [ ] Document setup, exact compartment scope, authentication choices, CIDR aliases, preview/apply, coverage, and failure behavior with official citations. Update handoff and checks precisely.
+- [x] Review each task's spec compliance and code quality with an independent task reviewer and resolve material findings. Review the whole integrated branch afterward.
+- [x] Run all shared-package analyzers/tests and Flutter analyzer/widget suite; build native app/CLI. Native smoke uses fictional profiles/executables until the user chooses a real connection and scope. Do not claim live OCI/IAM success from fixtures.
+- [x] Document setup, exact compartment scope, authentication choices, CIDR aliases, preview/apply, coverage, and failure behavior with official citations. Update handoff and checks precisely.
+- [x] Build and verify a universal macOS DMG, mounted app contents/signatures, and SHA-256 checksum.
+- [ ] Publish the verified DMG and checksum in the private repository's Releases.
 - [ ] Verify private GitHub repository ownership/visibility and push the tested source under Sergio Farfan authorship. Keep credential/config files, real observations, SDK locations, and generated outputs excluded.
 - [ ] Finish with artifact/repository links, test/build evidence, actual live-verification limits, and a useful next action.

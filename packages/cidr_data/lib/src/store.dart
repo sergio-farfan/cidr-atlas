@@ -116,17 +116,32 @@ class InventoryStore {
   void save(PrefixRecord record, {bool rejectConflicts = false}) =>
       _saveRecords([record], action: 'save', rejectConflicts: rejectConflicts);
 
+  /// Creates a new nonconflicting reservation, rechecking the latest inventory
+  /// and record identity inside the same transaction as the write and audit.
+  void reserve(PrefixRecord record) => _saveRecords(
+        [record],
+        action: 'reserve',
+        rejectConflicts: true,
+        requireNew: true,
+      );
+
   void saveAll(List<PrefixRecord> records, {bool rejectConflicts = false}) =>
       _saveRecords(records, action: 'save', rejectConflicts: rejectConflicts);
 
   void _saveRecords(List<PrefixRecord> records,
-      {required String action, required bool rejectConflicts}) {
+      {required String action,
+      required bool rejectConflicts,
+      bool requireNew = false}) {
     _ensureOpen();
     if (records.isEmpty) return;
     _transaction(() {
       _checkDuplicateIds(records);
       final combined = {for (final item in list()) item.id: item};
       for (final record in records) {
+        if (requireNew && combined.containsKey(record.id)) {
+          throw FormatException('A prefix with id ${record.id} already exists. '
+              'Recalculate the recommendation before reserving.');
+        }
         combined[record.id] = record;
       }
       _validate(combined.values.toList());

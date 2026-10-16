@@ -200,6 +200,7 @@ void main() {
       final client = FakeOciInventoryClient();
       await openImport(tester, client);
       expect(find.text('Discover OCI inventory'), findsOneWidget);
+      expect(find.textContaining('Local overlap-check scope'), findsOneWidget);
       expect(client.networkCalls, 0);
       expect(find.text('ocid1.tenancy.oc1..fictional'), findsOneWidget);
       await tester.tap(

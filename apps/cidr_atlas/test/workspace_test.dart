@@ -78,6 +78,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(controller.selected?.id, 'demo-vcn');
         expect(find.text('PREFIX DETAILS'), findsOneWidget);
+        expect(find.text('Total addresses'), findsOneWidget);
         expect(tester.takeException(), isNull);
         if (size.width == 1100) {
           expect(find.byType(Dialog), findsOneWidget);
@@ -167,13 +168,18 @@ void main() {
     await workspace(tester);
     await tester.tap(find.text('Planner'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Enter a range manually'));
+    await tester.tap(find.byKey(const ValueKey('planner-domain')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('demo-corporate').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('planner-pool')));
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('Western region allocation').last);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Find available space'));
+    await tester.ensureVisible(find.byKey(const ValueKey('planner-calculate')));
+    await tester.tap(find.byKey(const ValueKey('planner-calculate')));
     await tester.pumpAndSettle();
-    expect(find.text('10.64.32.0/24'), findsOneWidget);
+    expect(find.text('10.64.32.0/24'), findsWidgets);
     expect(find.text('10.64.0.0/24'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -245,7 +251,11 @@ void main() {
     await workspace(tester);
     await tester.tap(find.text('Planner'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Enter a range manually'));
+    await tester.tap(find.byKey(const ValueKey('planner-domain')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('demo-corporate').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('planner-pool')));
     await tester.pumpAndSettle();
     await tester.tap(find.textContaining('Western region allocation').last);
     await tester.pumpAndSettle();

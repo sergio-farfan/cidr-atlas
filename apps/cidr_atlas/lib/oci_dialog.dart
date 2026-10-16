@@ -233,7 +233,14 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
     key: ValueKey(key),
     controller: controller,
     enabled: !_busy,
-    decoration: InputDecoration(labelText: label),
+    decoration: InputDecoration(
+      labelText: label,
+      hintText: key == 'oci-domain' ? 'e.g. corporate-connected' : null,
+      helperText: key == 'oci-domain'
+          ? 'Local overlap-check scope. Use the same name for connected networks.'
+          : null,
+      helperMaxLines: 3,
+    ),
     validator: (value) => _required(value, label),
   );
 

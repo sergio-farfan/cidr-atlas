@@ -8,7 +8,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'controller.dart';
+import 'cidr_inspector.dart';
 import 'dialogs.dart';
+import 'visual_planner.dart';
 
 const _background = Color(0xff10151f);
 const _surface = Color(0xff171e2b);
@@ -169,6 +171,39 @@ class _WorkspaceState extends State<_Workspace> {
     _guard(() => c.save(result, rejectConflicts: !confirmedConflicts));
   }
 
+  Future<void> _reserveRecommendation(PrefixRecord proposal) async {
+    final reviewed = await showDialog<PrefixRecord>(
+      context: context,
+      builder: (_) => RecordEditor(records: c.records, record: proposal),
+    );
+    if (reviewed == null || !mounted) return;
+    if (reviewed.id != proposal.id ||
+        reviewed.cidr != proposal.cidr ||
+        reviewed.routingDomain != proposal.routingDomain ||
+        reviewed.parentId != proposal.parentId ||
+        reviewed.kind != proposal.kind ||
+        reviewed.tenancy != proposal.tenancy ||
+        reviewed.region != proposal.region ||
+        reviewed.resourceId != proposal.resourceId ||
+        reviewed.vcnId != proposal.vcnId ||
+        reviewed.status == PrefixStatus.retired) {
+      _showError(
+        const FormatException(
+          'Recalculate the recommendation after changing its network, scope, '
+          'parent, kind, or allocation state.',
+        ),
+      );
+      return;
+    }
+    final notes = reviewed.notes.contains(proposal.notes)
+        ? reviewed.notes
+        : [
+            reviewed.notes.trim(),
+            proposal.notes,
+          ].where((part) => part.isNotEmpty).join('\n\n');
+    _guard(() => c.reserve(reviewed.copyWith(notes: notes, source: 'planner')));
+  }
+
   void _guard(void Function() operation) {
     try {
       operation();
@@ -266,7 +301,10 @@ class _WorkspaceState extends State<_Workspace> {
                     Expanded(
                       child: switch (c.page) {
                         1 => _conflicts(),
-                        2 => _Planner(records: c.records, onReserve: _editor),
+                        2 => VisualPlanner(
+                          records: c.records,
+                          onReserve: _reserveRecommendation,
+                        ),
                         3 => _history(),
                         _ => _inventory(),
                       },
@@ -477,7 +515,7 @@ class _WorkspaceState extends State<_Workspace> {
         const Padding(
           padding: EdgeInsets.fromLTRB(22, 0, 18, 22),
           child: Text(
-            'v0.1  ·  MACOS PREVIEW',
+            'v0.2  ·  MACOS PREVIEW',
             style: TextStyle(
               color: Color(0xff68778e),
               fontSize: 9,
@@ -493,13 +531,13 @@ class _WorkspaceState extends State<_Workspace> {
     const titles = [
       'Address inventory',
       'Routing conflicts',
-      'Allocation planner',
+      'Visual address planner',
       'Change history',
     ];
     const subtitles = [
       'A clear view of every network you own.',
       'Review overlapping ranges in connected address spaces.',
-      'Find the next available space in your address plan.',
+      'Right-size the next allocation and preserve useful address space.',
       'A local audit trail of inventory changes.',
     ];
     return Container(
@@ -1240,6 +1278,14 @@ class _WorkspaceState extends State<_Workspace> {
                 const SizedBox(height: 14),
                 _statusBadge(record.status),
                 const SizedBox(height: 26),
+                CidrInspector(
+                  cidr: Cidr.parse(record.cidr),
+                  policy:
+                      record.source == 'oci' && record.kind == PrefixKind.subnet
+                      ? AddressPolicy.ociIpv4Subnet
+                      : AddressPolicy.generic,
+                ),
+                const SizedBox(height: 26),
                 for (final field in [
                   ['Routing domain', record.routingDomain],
                   [
@@ -1460,294 +1506,4 @@ class _WorkspaceState extends State<_Workspace> {
             );
           },
         );
-}
-
-class _Planner extends StatefulWidget {
-  const _Planner({required this.records, required this.onReserve});
-  final List<PrefixRecord> records;
-  final void Function(PrefixRecord) onReserve;
-  @override
-  State<_Planner> createState() => _PlannerState();
-}
-
-class _PlannerState extends State<_Planner> {
-  final _pool = TextEditingController();
-  final _domain = TextEditingController();
-  final _length = TextEditingController(text: '24');
-  PrefixRecord? _selectedPool;
-  List<Cidr> _available = [];
-  String? _error;
-  bool _ran = false;
-  @override
-  void didUpdateWidget(covariant _Planner oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.records, widget.records)) {
-      _ran = false;
-      _available = [];
-      if (_selectedPool != null) {
-        final latest = widget.records
-            .where(
-              (r) =>
-                  r.id == _selectedPool!.id &&
-                  r.kind != PrefixKind.subnet &&
-                  r.status != PrefixStatus.retired,
-            )
-            .firstOrNull;
-        _selectedPool = latest;
-        if (latest != null) {
-          _pool.text = latest.cidr;
-          _domain.text = latest.routingDomain;
-        }
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _pool.dispose();
-    _domain.dispose();
-    _length.dispose();
-    super.dispose();
-  }
-
-  void _find() {
-    try {
-      final pool = Cidr.parse(_pool.text.trim());
-      final length = int.tryParse(_length.text.trim());
-      if (length == null)
-        throw const FormatException('Prefix length must be a whole number.');
-      if (_domain.text.trim().isEmpty)
-        throw const FormatException('Enter an explicit routing domain.');
-      final results = InventoryRules.available(
-        parent: pool,
-        prefixLength: length,
-        records: widget.records,
-        parentId: _selectedPool?.id,
-        routingDomain: _domain.text.trim(),
-        limit: 12,
-      );
-      setState(() {
-        _available = results;
-        _ran = true;
-        _error = null;
-      });
-    } catch (error) {
-      setState(() {
-        _error = atlasError(error);
-        _ran = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    padding: const EdgeInsets.all(26),
-    child: Align(
-      alignment: Alignment.topLeft,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 900),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: _surface,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _border),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Find available prefixes',
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 10),
-                  const Text(
-                    'Select an existing pool or enter a parent range. Suggestions exclude active, reserved, and planned ranges in the same routing domain.',
-                    style: TextStyle(color: _muted, fontSize: 13, height: 1.7),
-                  ),
-                  const SizedBox(height: 24),
-                  DropdownButtonFormField<String>(
-                    key: ValueKey('pool-${_selectedPool?.id}'),
-                    initialValue: _selectedPool?.id ?? '',
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Existing parent pool (optional)',
-                    ),
-                    items: [
-                      const DropdownMenuItem(
-                        value: '',
-                        child: Text('Enter a range manually'),
-                      ),
-                      ...widget.records
-                          .where(
-                            (r) =>
-                                r.kind != PrefixKind.subnet &&
-                                r.status != PrefixStatus.retired,
-                          )
-                          .map(
-                            (r) => DropdownMenuItem(
-                              value: r.id,
-                              child: Text(
-                                '${r.cidr} · ${r.name} · ${r.routingDomain}',
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ),
-                    ],
-                    onChanged: (id) => setState(() {
-                      _selectedPool = id == ''
-                          ? null
-                          : widget.records.firstWhere((r) => r.id == id);
-                      if (_selectedPool != null) {
-                        _pool.text = _selectedPool!.cidr;
-                        _domain.text = _selectedPool!.routingDomain;
-                      }
-                      _ran = false;
-                    }),
-                  ),
-                  const SizedBox(height: 18),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        flex: 3,
-                        child: TextField(
-                          controller: _pool,
-                          onChanged: (_) => setState(() {
-                            _selectedPool = null;
-                            _ran = false;
-                          }),
-                          decoration: const InputDecoration(
-                            labelText: 'Parent CIDR',
-                            hintText: '10.64.0.0/16',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        flex: 3,
-                        child: TextField(
-                          controller: _domain,
-                          onChanged: (_) => setState(() {
-                            _selectedPool = null;
-                            _ran = false;
-                          }),
-                          decoration: const InputDecoration(
-                            labelText: 'Routing domain',
-                            hintText: 'corporate',
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: TextField(
-                          controller: _length,
-                          onChanged: (_) => setState(() => _ran = false),
-                          decoration: const InputDecoration(
-                            labelText: 'Length',
-                            prefixText: '/',
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 22),
-                  FilledButton.icon(
-                    onPressed: _find,
-                    icon: const Icon(Icons.manage_search, size: 19),
-                    label: const Text('Find available space'),
-                  ),
-                  if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 18),
-                      child: MessagePanel(message: _error!, error: true),
-                    ),
-                ],
-              ),
-            ),
-            if (_ran) ...[
-              const SizedBox(height: 24),
-              Text(
-                _available.isEmpty
-                    ? 'No available space at this prefix length'
-                    : '${_available.length} suggestions',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Text(
-                'Suggestions reflect this register only and are not reservations. Use Reserve to review ownership and save a prefix.',
-                style: TextStyle(color: _muted, fontSize: 12, height: 1.6),
-              ),
-              const SizedBox(height: 16),
-              for (final range in _available)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _surface,
-                    border: Border.all(color: _border),
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.check_circle_outline,
-                        color: Color(0xff77d8b4),
-                        size: 18,
-                      ),
-                      const SizedBox(width: 14),
-                      SelectableText(
-                        range.canonical,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          color: _accent,
-                        ),
-                      ),
-                      const SizedBox(width: 20),
-                      Text(
-                        '${range.addressCount} addresses',
-                        style: const TextStyle(color: _muted, fontSize: 12),
-                      ),
-                      const Spacer(),
-                      TextButton(
-                        onPressed: () => widget.onReserve(
-                          PrefixRecord(
-                            id: 'manual:${DateTime.now().microsecondsSinceEpoch}',
-                            cidr: range.canonical,
-                            name: '',
-                            routingDomain: _domain.text.trim(),
-                            kind: _selectedPool?.kind == PrefixKind.vcn
-                                ? PrefixKind.subnet
-                                : PrefixKind.vcn,
-                            parentId: _selectedPool?.id ?? '',
-                            tenancy: _selectedPool?.tenancy ?? '',
-                            region: _selectedPool?.region ?? '',
-                            customer: _selectedPool?.customer ?? '',
-                            environment: _selectedPool?.environment ?? '',
-                            vcnId: _selectedPool?.kind == PrefixKind.vcn
-                                ? _selectedPool!.resourceId
-                                : '',
-                            source: 'manual',
-                          ),
-                        ),
-                        child: const Text('Reserve'),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ],
-        ),
-      ),
-    ),
-  );
 }

@@ -100,6 +100,12 @@ class AtlasController extends ChangeNotifier {
     refresh();
   }
 
+  void reserve(PrefixRecord record) {
+    store.reserve(record);
+    selectedId = record.id;
+    refresh();
+  }
+
   void remove(String id) {
     store.delete(id);
     if (selectedId == id) selectedId = null;

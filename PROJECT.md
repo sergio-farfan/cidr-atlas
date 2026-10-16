@@ -43,9 +43,9 @@ No OCI credentials were read and no live OCI access occurred during this validat
 
 ## Requested next action
 
-Add read-only OCI CLI integration using an existing local profile, with region and compartment selection. This feature is requested but has not been designed or implemented. Validate the collection commands against official OCI documentation and the installed CLI before implementation; preserve import preview, atomic apply, planning fields, routing-domain scope, and incomplete-discovery warnings.
+Add read-only OCI CLI integration using an existing local profile, with region and compartment selection. The proposed design is in `docs/superpowers/specs/2026-10-15-oci-cli-live-import-design.md`; an independent builder check found no important unanswered questions. It awaits user approval before implementation. Collection commands and fields were checked against official Oracle documentation and installed OCI CLI 3.94.1. Preserve import preview, atomic apply, planning fields, routing-domain scope, and incomplete-discovery warnings.
 
-Publish the source to a private GitHub repository named `cidr-atlas` under the account associated with `sergio.farfan@gmail.com`. Repository creation and publication are pending verification in this session.
+Publish the source to a private GitHub repository named `cidr-atlas`. The GitHub connector confirms account `sergio-farfan` with `sergio.farfan@gmail.com`. The host GitHub CLI token is invalid; its browser reauthentication is pending. Repository creation and publication have not occurred. Local commit author/committer metadata is Sergio Farfan with the requested Gmail address.
 
 Continuation prompt:
 

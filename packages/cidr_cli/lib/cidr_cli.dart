@@ -13,7 +13,9 @@ import 'package:cidr_core/cidr_core.dart';
 import 'package:cidr_data/cidr_data.dart';
 import 'package:cidr_oci/cidr_oci.dart';
 
-const _version = '0.1.0';
+import 'src/recommendation.dart';
+
+const _version = '0.2.0';
 
 /// Runs desktop commands, including asynchronous OCI discovery.
 Future<int> runCidrctlAsync(
@@ -235,6 +237,8 @@ int runCidrctl(
         return 0;
       case 'import':
         return _import(store, command, output, errors);
+      case 'recommend':
+        return runRecommendation(store, command, output, errors);
       case 'export':
         _requireRest(command, 0);
         final format = command['format'] as String;
@@ -386,6 +390,7 @@ ArgParser _parser() {
   command('history')
     ..addOption('limit', defaultsTo: '50')
     ..addOption('format', allowed: ['table', 'json'], defaultsTo: 'table');
+  addRecommendationOptions(command('recommend'));
   return parser;
 }
 
@@ -394,7 +399,7 @@ void _usage(ArgParser parser, StringSink output, {String? command}) {
     output.writeln('CIDR Atlas command line interface $_version');
     output.writeln('Usage: cidrctl [--db PATH] <command> [options]');
     output.writeln('Commands: list, check <CIDR>, reserve <CIDR>, '
-        'import [csv|json|oci], discover oci, export, history');
+        'recommend, import [csv|json|oci], discover oci, export, history');
   } else {
     output.writeln('Usage: cidrctl $command '
         '${command == 'check' || command == 'reserve' ? '<CIDR> ' : ''}'

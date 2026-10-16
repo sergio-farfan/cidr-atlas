@@ -1,3 +1,6 @@
+// CIDR Atlas: inventory import normalization and OCI JSON compatibility.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 import 'dart:convert';
 
 import 'package:cidr_core/cidr_core.dart';
@@ -239,6 +242,48 @@ void main() {
       final first = InventoryImport.json(input, routingDomain: 'domain');
       final second = InventoryImport.json(input, routingDomain: 'domain');
       expect(first.records.map((r) => r.id), second.records.map((r) => r.id));
+    });
+
+    test('unions OCI subnet IPv4 and VCN BYO IPv6 aliases without duplicates',
+        () {
+      final importedVcn = {
+        ...vcn,
+        'byoipv6-cidr-blocks': ['2001:db8:41::/56', '2001:db8:40::/56'],
+        'byoipv6CidrBlocks': ['2001:db8:41::/56', '2001:db8:42::/56'],
+      };
+      final importedSubnet = {
+        ...subnet,
+        'ipv4-cidr-blocks': ['10.40.2.0/24', '10.40.3.0/24'],
+        'ipv4CidrBlocks': ['10.40.4.0/24'],
+      };
+      final preview = InventoryImport.json(
+        jsonEncode(ociBundle(vcns: [importedVcn], subnets: [importedSubnet])),
+        routingDomain: 'enterprise',
+      );
+
+      expect(preview.errors, isEmpty);
+      expect(preview.records, hasLength(9));
+      final vcns =
+          preview.records.where((r) => r.kind == PrefixKind.vcn).toList();
+      final subnets =
+          preview.records.where((r) => r.kind == PrefixKind.subnet).toList();
+      expect(vcns.map((r) => r.cidr).toSet(), {
+        '10.40.0.0/16',
+        '10.41.0.0/16',
+        '2001:db8:40::/56',
+        '2001:db8:41::/56',
+        '2001:db8:42::/56',
+      });
+      expect(subnets.map((r) => r.cidr).toSet(), {
+        '10.40.2.0/24',
+        '10.40.3.0/24',
+        '10.40.4.0/24',
+        '2001:db8:40:2::/64',
+      });
+      expect(vcns.map((r) => r.resourceId).toSet(), {vcn['id']});
+      expect(subnets.map((r) => r.resourceId).toSet(), {subnet['id']});
+      expect(subnets.map((r) => r.vcnId).toSet(), {vcn['id']});
+      expect(preview.records.map((r) => r.id).toSet(), hasLength(9));
     });
 
     test('observation time comes from source metadata rather than import clock',

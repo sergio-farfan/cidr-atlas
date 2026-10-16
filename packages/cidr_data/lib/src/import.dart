@@ -1,3 +1,6 @@
+// CIDR Atlas: offline import normalization and OCI record reconciliation.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 import 'dart:convert';
 
 import 'package:cidr_core/cidr_core.dart';
@@ -370,12 +373,17 @@ abstract final class InventoryImport {
       'cidrBlocks',
       'cidr-block',
       'cidrBlock',
+      'ipv4-cidr-blocks',
+      'ipv4CidrBlocks',
       'ipv6-cidr-blocks',
       'ipv6CidrBlocks',
       'ipv6-cidr-block',
       'ipv6CidrBlock',
       'ipv6-private-cidr-blocks',
       'ipv6PrivateCidrBlocks',
+      'byoipv6-cidr-blocks',
+      'byoipv6CidrBlocks',
+      'byoIpv6CidrBlocks',
     ]) {
       final value = item[key];
       if (value == null) continue;

@@ -1,3 +1,6 @@
+// CIDR Atlas: durable inventory storage, reconciliation, and atomic imports.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -176,6 +179,92 @@ void main() {
       contains('absent records were retained'),
     );
     expect(store.history().first.summary, contains('selected compartment'));
+  });
+
+  test('OCI alias refresh preserves planning fields and absent prefixes', () {
+    final initial = InventoryImport.json(
+      jsonEncode(ociBundle(
+        vcns: [
+          {
+            ...vcn,
+            'byoipv6CidrBlocks': ['2001:db8:41::/56']
+          },
+        ],
+        subnets: [
+          {
+            ...subnet,
+            'ipv4CidrBlocks': ['10.40.3.0/24']
+          },
+        ],
+      )),
+      routingDomain: 'corp',
+    );
+    store.applyImport(initial);
+    final originalSubnet = store.list().firstWhere(
+          (record) =>
+              record.kind == PrefixKind.subnet && record.cidr == '10.40.2.0/24',
+        );
+    store.save(originalSubnet.copyWith(
+      owner: 'Architect',
+      customer: 'Fictional client',
+      environment: 'prod',
+      notes: 'Keep this plan',
+      status: PrefixStatus.planned,
+    ));
+
+    final refreshed = InventoryImport.json(
+      jsonEncode(ociBundle(
+        vcns: [
+          {
+            ...vcn,
+            'byoipv6CidrBlocks': ['2001:db8:42::/56'],
+          },
+        ],
+        subnets: [
+          {
+            ...subnet,
+            'ipv4CidrBlocks': ['10.40.4.0/24'],
+          },
+        ],
+      )),
+      routingDomain: 'corp',
+    );
+    expect(refreshed.canApply, isTrue, reason: refreshed.errors.join('; '));
+    store.applyImport(refreshed);
+
+    final preserved =
+        store.list().singleWhere((record) => record.id == originalSubnet.id);
+    expect(preserved.owner, 'Architect');
+    expect(preserved.customer, 'Fictional client');
+    expect(preserved.environment, 'prod');
+    expect(preserved.notes, 'Keep this plan');
+    expect(preserved.status, PrefixStatus.planned);
+    expect(store.list().map((record) => record.cidr),
+        contains('2001:db8:40::/56'));
+    expect(store.list().map((record) => record.cidr),
+        contains('2001:db8:41::/56'));
+    expect(store.list().map((record) => record.cidr),
+        contains('2001:db8:42::/56'));
+    expect(store.list().map((record) => record.cidr), contains('10.40.3.0/24'));
+    expect(store.list().map((record) => record.cidr), contains('10.40.4.0/24'));
+  });
+
+  test('invalid OCI alias CIDR rolls back the entire import atomically', () {
+    final preview = InventoryImport.json(
+      jsonEncode(ociBundle(vcns: [
+        {
+          ...vcn,
+          'byoipv6-cidr-blocks': ['2001:db8:41::1/56'],
+        },
+      ])),
+      routingDomain: 'corp',
+    );
+
+    expect(preview.canApply, isFalse);
+    expect(preview.errors.join(), contains('Host bits'));
+    expect(() => store.applyImport(preview), throwsFormatException);
+    expect(store.list(), isEmpty);
+    expect(store.history(), isEmpty);
   });
 
   test(

@@ -2,7 +2,7 @@
 
 Date: 2026-10-15
 Author: Sergio Farfan
-Status: Proposed for approval
+Status: Approved by Sergio Farfan on 2026-10-15
 
 ## Intent and agreed decisions
 
@@ -23,9 +23,9 @@ The workflow reads OCI and writes only the local inventory after an explicit
 Apply action. It makes no OCI changes, schedules no background scans, and creates
 no new credentials or browser authentication sessions.
 
-These scope and interface choices are proposed implementation defaults; the user
-has approved the profile, region/compartment selection, and private repository
-name, but has not yet approved this complete design.
+The user approved this complete design, including the profile,
+region/compartment selection, scoped collection, preview/apply flow, shared CLI,
+and private repository name.
 
 ## Desktop workflow
 

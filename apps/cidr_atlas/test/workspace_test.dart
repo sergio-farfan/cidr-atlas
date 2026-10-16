@@ -60,6 +60,21 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('workspace help explains discovery and manual prefix entry', (
+    tester,
+  ) async {
+    await workspace(tester, width: 1100, height: 740);
+    await tester.tap(find.byTooltip('Help and examples'));
+    await tester.pumpAndSettle();
+    expect(find.text('Help and examples'), findsWidgets);
+    expect(find.textContaining('OCI discovery'), findsWidgets);
+    expect(controller.records, isEmpty);
+    await tester.tap(find.text('Close help'));
+    await tester.pumpAndSettle();
+    expect(find.text('Build your address map'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   for (final size in [const Size(1100, 740), const Size(1440, 900)]) {
     testWidgets(
       'inventory selection and filters remain usable at ${size.width.toInt()}x${size.height.toInt()}',
@@ -73,6 +88,8 @@ void main() {
           200,
           scrollable: find.byType(Scrollable).last,
         );
+        await tester.ensureVisible(find.text('Production VCN'));
+        await tester.pumpAndSettle();
         await tester.tap(find.text('Production VCN'));
         await tester.pump(kDoubleTapTimeout);
         await tester.pumpAndSettle();

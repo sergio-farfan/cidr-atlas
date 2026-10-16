@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'cidr_inspector.dart';
+import 'help.dart';
 
 const _surface = Color(0xff171e2b);
 const _border = Color(0xff293244);
@@ -304,11 +305,17 @@ class _VisualPlannerState extends State<VisualPlanner> {
     String label,
     TextEditingController controller, {
     String? hint,
+    String? helper,
   }) => TextField(
     key: ValueKey(keyName),
     controller: controller,
     keyboardType: TextInputType.number,
-    decoration: InputDecoration(labelText: label, hintText: hint),
+    decoration: InputDecoration(
+      labelText: label,
+      hintText: hint,
+      helperText: helper,
+      helperMaxLines: 3,
+    ),
   );
 
   Widget _controls(double width) {
@@ -410,6 +417,8 @@ class _VisualPlannerState extends State<VisualPlanner> {
                     controller: _manualPool,
                     decoration: const InputDecoration(
                       labelText: 'Manual pool CIDR',
+                      helperText: 'Boundary to search, e.g. 10.64.0.0/16. This is not the new subnet size.',
+                      helperMaxLines: 3,
                     ),
                   ),
                 ),
@@ -482,6 +491,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
                     'Requested prefix length',
                     _prefix,
                     hint: '24',
+                    helper: '24 means /24: 256 total IPv4 addresses. Use demand mode to choose the size for you.',
                   ),
                 ),
               if (_demandMode) ...[
@@ -565,9 +575,22 @@ class _VisualPlannerState extends State<VisualPlanner> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Address Space',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.w600),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Address Space',
+                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.w600),
+                  ),
+                ),
+                TextButton.icon(
+                  key: const ValueKey('planner-help'),
+                  onPressed: () =>
+                      showAtlasHelp(context, topic: HelpTopic.planning),
+                  icon: const Icon(Icons.help_outline, size: 18),
+                  label: const Text('Planner help'),
+                ),
+              ],
             ),
             const SizedBox(height: 8),
             const Text(

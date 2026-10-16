@@ -4,6 +4,8 @@
 import 'package:cidr_oci/cidr_oci.dart';
 import 'package:flutter/material.dart';
 
+import 'help.dart';
+
 class OciImportSelection {
   const OciImportSelection({
     required this.bundleJson,
@@ -263,7 +265,7 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Read VCNs and subnets in one region and compartment. Selecting a parent compartment does not include descendants. Review the results before saving locally.',
+                    'Read VCNs and subnets in one region and compartment. OCI supplies their network CIDRs; you do not enter a prefix here. Selecting a parent compartment does not include descendants. Review the results before saving locally.',
                   ),
                   const SizedBox(height: 18),
                   DropdownButtonFormField<String>(
@@ -481,6 +483,13 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
         ),
       ),
       actions: [
+        TextButton(
+          key: const ValueKey('oci-help'),
+          onPressed: _busy
+              ? null
+              : () => showAtlasHelp(context, topic: HelpTopic.ociDiscovery),
+          child: const Text('Discovery help'),
+        ),
         TextButton(
           onPressed: () {
             _cancel();

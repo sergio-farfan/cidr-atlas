@@ -11,6 +11,7 @@ import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
 import 'oci_dialog.dart';
+import 'help.dart';
 
 String atlasLabel(String value) =>
     value.isEmpty ? value : '${value[0].toUpperCase()}${value.substring(1)}';
@@ -71,12 +72,18 @@ class _RecordEditorState extends State<RecordEditor> {
     String label, {
     bool required = false,
     String? hint,
+    String? helper,
     int lines = 1,
   }) => TextFormField(
     key: ValueKey('editor-$key'),
     controller: _fields[key],
     maxLines: lines,
-    decoration: InputDecoration(labelText: label, hintText: hint),
+    decoration: InputDecoration(
+      labelText: label,
+      hintText: hint,
+      helperText: helper,
+      helperMaxLines: 3,
+    ),
     validator: (value) {
       if (required && (value == null || value.trim().isEmpty))
         return '$label is required';
@@ -164,9 +171,10 @@ class _RecordEditorState extends State<RecordEditor> {
                     Expanded(
                       child: _field(
                         'cidr',
-                        'CIDR',
+                        'Network CIDR',
                         required: true,
                         hint: '10.64.0.0/20',
+                        helper: 'Enter the network address and /bits for a manual record. OCI imports supply their CIDRs automatically.',
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -552,6 +560,7 @@ class _ImportDialogState extends State<ImportDialog> {
   List<String> _combinedErrors = [];
   int _combinedConflicts = 0;
   List<String> _ociWarnings = [];
+  bool _liveDiscovery = false;
   @override
   void initState() {
     super.initState();
@@ -587,6 +596,7 @@ class _ImportDialogState extends State<ImportDialog> {
         _csv = file.name.toLowerCase().endsWith('.csv');
         _fileError = null;
         _ociWarnings = [];
+        _liveDiscovery = false;
       });
       _parse();
     } catch (error) {
@@ -610,6 +620,14 @@ class _ImportDialogState extends State<ImportDialog> {
             routingDomain: _domain.text,
             existingRecords: widget.existing,
           );
+    if (!preview.canApply) {
+      setState(() {
+        _preview = preview;
+        _combinedErrors = [];
+        _combinedConflicts = 0;
+      });
+      return;
+    }
     try {
       final merged =
           widget.proposedRecords?.call(preview) ??
@@ -643,6 +661,7 @@ class _ImportDialogState extends State<ImportDialog> {
       _filename = null;
       _fileError = null;
       _ociWarnings = [];
+      _liveDiscovery = false;
       _combinedErrors = [];
       _combinedConflicts = 0;
     });
@@ -658,6 +677,7 @@ class _ImportDialogState extends State<ImportDialog> {
       _filename = 'OCI CLI discovery';
       _domain.text = selection.routingDomain;
       _ociWarnings = selection.warnings;
+      _liveDiscovery = true;
     });
     _parse();
   }
@@ -665,6 +685,15 @@ class _ImportDialogState extends State<ImportDialog> {
   @override
   Widget build(BuildContext context) {
     final preview = _preview;
+    final emptyDiscovery = _liveDiscovery && preview?.isEmptyResult == true;
+    final warnings = {..._ociWarnings, ...?preview?.warnings};
+    final detailWarnings = warnings
+        .where(
+          (warning) =>
+              warning.startsWith('Reported coverage:') ||
+              warning.startsWith('Source snapshot observed at'),
+        )
+        .toList();
     return AlertDialog(
       title: const Text('Import inventory'),
       content: SizedBox(
@@ -677,7 +706,7 @@ class _ImportDialogState extends State<ImportDialog> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Preview a CSV, CIDR Atlas JSON backup, or OCI inventory before saving. Existing records absent from the import are retained.',
+                  'Preview a CSV, CIDR Atlas JSON backup, or OCI inventory before saving. OCI discovery reads existing network CIDRs automatically; no manual CIDR is needed here. Existing records absent from the import are retained.',
                   style: TextStyle(color: Color(0xff98a6bc), height: 1.5),
                 ),
                 const SizedBox(height: 20),
@@ -721,27 +750,64 @@ class _ImportDialogState extends State<ImportDialog> {
                 if (preview != null) ...[
                   const SizedBox(height: 24),
                   Text(
-                    '${preview.records.length} prefixes · ${preview.source}',
+                    '${preview.records.length} network CIDR${preview.records.length == 1 ? '' : 's'} · ${preview.source}',
                     style: const TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  if (preview.errors.isNotEmpty || _combinedErrors.isNotEmpty)
+                  if (emptyDiscovery) ...[
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Discovery completed — no networks found',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const MessagePanel(
+                      message: 'No manual CIDR is needed for OCI discovery. There is nothing to save. Check the selected profile, resource region, and compartment. Tenancy root and parent compartments do not include their children; choose the compartment that contains your VCNs or subnets.',
+                    ),
+                    TextButton.icon(
+                      onPressed: _discoverOci,
+                      icon: const Icon(Icons.refresh, size: 18),
+                      label: const Text('Choose another compartment or region'),
+                    ),
+                  ],
+                  if (!emptyDiscovery &&
+                      (preview.errors.isNotEmpty || _combinedErrors.isNotEmpty))
                     Padding(
                       padding: const EdgeInsets.only(top: 14),
                       child: MessagePanel(
-                        message: [
-                          ...preview.errors,
+                        message: {
+                          for (final error in preview.errors)
+                            error == ImportPreview.emptyRecordsMessage
+                                ? 'The selected file contains no network CIDR records. Choose a populated CSV or JSON inventory.'
+                                : error,
                           ..._combinedErrors,
-                        ].join('\n'),
+                        }.join('\n'),
                         error: true,
                       ),
                     ),
-                  for (final warning in [..._ociWarnings, ...preview.warnings])
+                  for (final warning in warnings.where(
+                    (warning) => !detailWarnings.contains(warning),
+                  ))
                     Padding(
                       padding: const EdgeInsets.only(top: 12),
                       child: MessagePanel(message: warning),
+                    ),
+                  if (detailWarnings.isNotEmpty)
+                    ExpansionTile(
+                      tilePadding: EdgeInsets.zero,
+                      title: const Text('Coverage and observation details'),
+                      children: [
+                        for (final warning in detailWarnings)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: MessagePanel(message: warning),
+                          ),
+                      ],
                     ),
                   if (_combinedConflicts > 0)
                     Padding(
@@ -802,6 +868,12 @@ class _ImportDialogState extends State<ImportDialog> {
         ),
       ),
       actions: [
+        TextButton.icon(
+          key: const ValueKey('import-help'),
+          onPressed: () => showAtlasHelp(context, topic: HelpTopic.imports),
+          icon: const Icon(Icons.help_outline, size: 18),
+          label: const Text('Import help'),
+        ),
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),

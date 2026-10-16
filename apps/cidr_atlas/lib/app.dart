@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'controller.dart';
 import 'cidr_inspector.dart';
 import 'dialogs.dart';
+import 'help.dart';
 import 'visual_planner.dart';
 
 const _background = Color(0xff10151f);
@@ -515,7 +516,7 @@ class _WorkspaceState extends State<_Workspace> {
         const Padding(
           padding: EdgeInsets.fromLTRB(22, 0, 18, 22),
           child: Text(
-            'v0.2  ·  MACOS PREVIEW',
+            'v0.2.1  ·  MACOS PREVIEW',
             style: TextStyle(
               color: Color(0xff68778e),
               fontSize: 9,
@@ -566,6 +567,11 @@ class _WorkspaceState extends State<_Workspace> {
                 ),
               ],
             ),
+          ),
+          IconButton(
+            tooltip: 'Help and examples',
+            onPressed: () => showAtlasHelp(context),
+            icon: const Icon(Icons.help_outline, size: 20, color: _muted),
           ),
           IconButton(
             tooltip: 'Refresh from local database',

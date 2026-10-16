@@ -125,6 +125,7 @@ Future<void> openImport(
   FakeOciInventoryClient client, {
   Size size = const Size(1100, 740),
   InventoryStore? store,
+  List<PrefixRecord> Function(ImportPreview)? proposedRecords,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -140,7 +141,8 @@ Future<void> openImport(
                 context: context,
                 builder: (_) => ImportDialog(
                   existing: store?.list() ?? [],
-                  proposedRecords: store?.mergedImportRecords,
+                  proposedRecords:
+                      proposedRecords ?? store?.mergedImportRecords,
                   ociClient: client,
                 ),
               );
@@ -193,6 +195,99 @@ void main() {
     );
     expect(find.text('Discover from OCI CLI'), findsOneWidget);
   });
+
+  testWidgets(
+    'active discovery disables help and completes into import preview',
+    (tester) async {
+      final client = FakeOciInventoryClient()
+        ..pending = Completer<OciDiscovery>();
+      await openImport(tester, client);
+      await discover(tester);
+      expect(
+        tester
+            .widget<TextButton>(find.byKey(const ValueKey('oci-help')))
+            .onPressed,
+        isNull,
+      );
+      client.pending!.complete(OciDiscovery(bundleJson: bundle));
+      await tester.pumpAndSettle();
+      expect(find.text('Discover OCI inventory'), findsNothing);
+      expect(find.text('1 network CIDR · OCI JSON'), findsOneWidget);
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Apply import'),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('discovery help retains scope input without network requests', (
+    tester,
+  ) async {
+    final client = FakeOciInventoryClient();
+    await openImport(tester, client);
+    await tester.enterText(
+      find.byKey(const ValueKey('oci-domain')),
+      'fictional-connected',
+    );
+    await tester.tap(find.byKey(const ValueKey('oci-help')));
+    await tester.pumpAndSettle();
+    expect(find.text('Discover existing OCI CIDRs'), findsOneWidget);
+    expect(client.networkCalls, 0);
+    await tester.tap(find.text('Close help'));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TextFormField>(find.byKey(const ValueKey('oci-domain')))
+          .controller!
+          .text,
+      'fictional-connected',
+    );
+    expect(find.text('Discover OCI inventory'), findsOneWidget);
+    expect(client.networkCalls, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'import help retains preview and expandable coverage without writes',
+    (tester) async {
+      final store = InventoryStore.memory();
+      addTearDown(store.close);
+      final client = FakeOciInventoryClient();
+      await openImport(tester, client, store: store);
+      await discover(tester);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('import-help')));
+      await tester.pumpAndSettle();
+      expect(find.text('Import files'), findsOneWidget);
+      await tester.tap(find.text('Close help'));
+      await tester.pumpAndSettle();
+      expect(find.text('1 network CIDR · OCI JSON'), findsOneWidget);
+      expect(store.list(), isEmpty);
+      expect(store.history(), isEmpty);
+      await tester.ensureVisible(find.text('Coverage and observation details'));
+      await tester.tap(find.text('Coverage and observation details'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Reported coverage:'), findsOneWidget);
+      expect(
+        find.textContaining('Source snapshot observed at'),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Apply import'),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'opening discovery reads metadata only and profile selects authentication',
@@ -270,7 +365,7 @@ void main() {
       );
       await tester.tap(find.text('Discover inventory'));
       await tester.pumpAndSettle();
-      expect(find.text('1 prefixes · OCI JSON'), findsOneWidget);
+      expect(find.text('1 network CIDR · OCI JSON'), findsOneWidget);
       expect(client.requestedRegion, 'us-phoenix-1');
       expect(client.requestedCompartment, 'ocid1.compartment.oc1..fictional');
     },
@@ -322,7 +417,7 @@ void main() {
       expect(client.cancellation!.isCancelled, isTrue);
       client.pending!.complete(const OciDiscovery(bundleJson: bundle));
       await tester.pumpAndSettle();
-      expect(find.text('1 prefixes · OCI JSON'), findsNothing);
+      expect(find.text('1 network CIDR · OCI JSON'), findsNothing);
       expect(
         tester
             .widget<FilledButton>(
@@ -495,7 +590,7 @@ void main() {
         await openImport(tester, client, size: size, store: store);
         await discover(tester);
         await tester.pumpAndSettle();
-        expect(find.text('1 prefixes · OCI JSON'), findsOneWidget);
+        expect(find.text('1 network CIDR · OCI JSON'), findsOneWidget);
         expect(store.list(), isEmpty);
         expect(find.text('Fictional discovery warning'), findsOneWidget);
         expect(tester.takeException(), isNull);
@@ -529,6 +624,100 @@ void main() {
       find.textContaining(RegExp('host bits', caseSensitive: false)),
       findsOneWidget,
     );
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Apply import'),
+          )
+          .onPressed,
+      isNull,
+    );
+  });
+
+  for (final size in [const Size(1100, 740), const Size(1440, 900)]) {
+    testWidgets('empty discovery guides scope selection at $size', (
+      tester,
+    ) async {
+      final store = InventoryStore.memory();
+      addTearDown(store.close);
+      final client = FakeOciInventoryClient()
+        ..json = '{"vcns":[],"subnets":[]}';
+      var mergeCalls = 0;
+      await openImport(
+        tester,
+        client,
+        size: size,
+        store: store,
+        proposedRecords: (preview) {
+          mergeCalls++;
+          return store.mergedImportRecords(preview);
+        },
+      );
+      await discover(tester);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Discovery completed — no networks found'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('No manual CIDR is needed'), findsOneWidget);
+      expect(
+        find.textContaining('Import contains no prefix records.'),
+        findsNothing,
+      );
+      expect(mergeCalls, 0);
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Apply import'),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(store.list(), isEmpty);
+      expect(store.history(), isEmpty);
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(
+        find.text('Choose another compartment or region'),
+      );
+      await tester.tap(find.text('Choose another compartment or region'));
+      await tester.pumpAndSettle();
+      expect(find.text('Discover OCI inventory'), findsOneWidget);
+      expect(client.networkCalls, 1);
+      client.json = bundle;
+      await discover(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('1 network CIDR · OCI JSON'), findsOneWidget);
+      await tester.tap(find.text('Apply import'));
+      await tester.pumpAndSettle();
+      expect(store.list().single.cidr, '10.64.0.0/16');
+      expect(store.history(), hasLength(1));
+    });
+  }
+
+  testWidgets('malformed preview is shown once without merged validation', (
+    tester,
+  ) async {
+    final client = FakeOciInventoryClient()..json = '{"vcns":{},"subnets":[]}';
+    var mergeCalls = 0;
+    await openImport(
+      tester,
+      client,
+      proposedRecords: (_) {
+        mergeCalls++;
+        throw const FormatException('Unexpected merged validation');
+      },
+    );
+    await discover(tester);
+    await tester.pumpAndSettle();
+    expect(mergeCalls, 0);
+    expect(find.text('Discovery completed — no networks found'), findsNothing);
+    final panels = tester
+        .widgetList<MessagePanel>(find.byType(MessagePanel))
+        .where((panel) => panel.error)
+        .toList();
+    expect(panels, hasLength(1));
+    expect(panels.single.message.split('\n'), hasLength(1));
+    expect(panels.single.message, contains('array'));
     expect(
       tester
           .widget<FilledButton>(

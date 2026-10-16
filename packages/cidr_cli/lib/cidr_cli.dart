@@ -315,6 +315,7 @@ int runCidrctl(
           'Discovery requires the asynchronous CLI entrypoint.');
     }
     final db = _databasePath(command, root, env);
+    if (command.name == 'clear') return _clear(db, command, output, errors);
     final existed = File(db).existsSync();
     store = InventoryStore.open(db);
     if (!existed) _warnCreated(db, errors);
@@ -548,6 +549,12 @@ ArgParser _parser() {
     ..addOption('limit', defaultsTo: '50')
     ..addOption('format', allowed: ['table', 'json'], defaultsTo: 'table');
   addRecommendationOptions(command('recommend'));
+  command('clear')
+    ..addOption('routing-domain',
+        help: 'Clear only this exact routing domain; otherwise everything.')
+    ..addFlag('yes',
+        negatable: false,
+        help: 'Required confirmation that local records are deleted.');
   return parser;
 }
 
@@ -556,7 +563,8 @@ void _usage(ArgParser parser, StringSink output, {String? command}) {
     output.writeln('CIDR Atlas command line interface $_version');
     output.writeln('Usage: cidrctl [--db PATH] <command> [options]');
     output.writeln('Commands: list, check <CIDR>, reserve <CIDR>, '
-        'recommend, import [csv|json|oci], discover oci, export, history');
+        'recommend, import [csv|json|oci], discover oci, export, history, '
+        'clear');
   } else {
     output.writeln('Usage: cidrctl $command '
         '${command == 'check' || command == 'reserve' ? '<CIDR> ' : ''}'
@@ -617,6 +625,15 @@ Example:
   cidrctl reserve 10.64.0.0/24 --name fictional-subnet --kind subnet --routing-domain fictional-connected
 Reserve saves a new local record and refuses an existing id; it does not provision an OCI network.
 A routing domain with no existing records prints a warning naming the known domains.''',
+    'clear' =>
+      '''Deletes local inventory records in one transaction; OCI resources are not changed.
+Without --routing-domain every local record is removed; with it, only that domain.
+--yes is required. Export a copy first, then clear (fictional domain):
+  cidrctl export --file fictional-backup.json
+  cidrctl clear --routing-domain fictional-connected --yes
+  cidrctl clear --yes
+History keeps one delete entry. Clear never creates an inventory: a missing --db fails.
+A record in another domain that names a cleared record as its parent blocks the clear.''',
     null => '''When is a prefix needed?
   discover/import: CIDRs come from OCI or the inventory file.
   check/reserve: enter a full CIDR such as 10.64.0.0/24.
@@ -624,7 +641,8 @@ A routing domain with no existing records prints a warning naming the known doma
 Use cidrctl <command> --help for guidance and fictional examples.
 Use --db PATH for a separate local inventory. Imports/recommendations preview by default.
 A command that creates a new empty inventory file warns on stderr; check --db if unexpected.
-Export --file replaces an ordinary existing file but refuses the open inventory database.''',
+Export --file replaces an ordinary existing file but refuses the open inventory database.
+Clear deletes local records only and requires --yes; export a copy first.''',
     _ => 'Use cidrctl --help to choose a workflow.',
   });
 }
@@ -642,6 +660,62 @@ List<String> _discoveryRegions(ArgResults command) {
     }
   }
   return selected.toList();
+}
+
+/// Deletes every local record, or every record in one routing domain, in a
+/// single validated transaction. Never creates an inventory file.
+int _clear(
+    String db, ArgResults command, StringSink output, StringSink errors) {
+  _requireRest(command, 0);
+  final domain = (command['routing-domain'] as String?)?.trim();
+  if (domain != null && domain.isEmpty) {
+    throw const FormatException('--routing-domain cannot be blank.');
+  }
+  if (!(command['yes'] as bool)) {
+    throw const FormatException('clear deletes local inventory records and '
+        'requires --yes. OCI resources are not changed. Run '
+        '"cidrctl export --file BACKUP.json" first to keep a copy.');
+  }
+  switch (FileSystemEntity.typeSync(db)) {
+    case FileSystemEntityType.notFound:
+      errors.writeln('Inventory not found: $db. Clear never creates an '
+          'inventory; check --db.');
+      return 1;
+    case FileSystemEntityType.directory:
+      throw FileSystemException('The database path is a directory', db);
+    default:
+      break;
+  }
+  final store = InventoryStore.open(db);
+  try {
+    final records = store.list();
+    final selected = domain == null
+        ? records
+        : records
+            .where((record) => record.routingDomain.trim() == domain)
+            .toList();
+    if (selected.isEmpty) {
+      if (domain != null) warnUnknownRoutingDomain(records, domain, errors);
+      output.writeln('No records to clear.');
+      return 0;
+    }
+    try {
+      store.deleteAll([for (final record in selected) record.id]);
+    } on FormatException catch (error) {
+      errors.writeln('Clear was not saved: ${error.message}');
+      return 1;
+    }
+    final count =
+        selected.length == 1 ? '1 record' : '${selected.length} records';
+    output.writeln(domain == null
+        ? 'Cleared $count from the local inventory. '
+            'OCI resources were not changed.'
+        : 'Cleared $count from routing domain $domain. '
+            'OCI resources were not changed.');
+    return 0;
+  } finally {
+    store.close();
+  }
 }
 
 void _requireRest(ArgResults command, int count) {

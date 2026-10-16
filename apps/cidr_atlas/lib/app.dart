@@ -338,6 +338,44 @@ class _WorkspaceState extends State<_Workspace> {
     if (confirmed == true && mounted) _guard(c.removeDemo);
   }
 
+  /// Deletes every local record, or one routing domain, after a typed
+  /// confirmation. History is kept; nothing outside the database changes.
+  Future<void> _clearInventory() async {
+    // The database is shared with cidrctl: confirm what it holds now.
+    try {
+      c.refresh();
+    } catch (error) {
+      _showError(error);
+      return;
+    }
+    if (c.records.isEmpty) return;
+    final request = await showDialog<ClearInventoryRequest>(
+      context: context,
+      builder: (_) => ClearInventoryDialog(
+        records: List.of(c.records),
+        initialDomain: c.domain,
+        onExportBackup: () => _export(false),
+      ),
+    );
+    if (request == null || !mounted) return;
+    _guard(() {
+      c.clearInventory(
+        routingDomain: request.routingDomain,
+        expectedCount: request.count,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Deleted ${request.count} local record'
+            '${request.count == 1 ? '' : 's'}'
+            '${request.routingDomain == null ? '' : ' in ${request.routingDomain}'}. '
+            'Change history is kept.',
+          ),
+        ),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) => CallbackShortcuts(
     bindings: {
@@ -980,11 +1018,14 @@ class _WorkspaceState extends State<_Workspace> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                const Text(
-                  'Select a row to inspect',
-                  style: TextStyle(color: _muted, fontSize: 11),
+                const Expanded(
+                  child: Text(
+                    'Select a row to inspect',
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    style: TextStyle(color: _muted, fontSize: 11),
+                  ),
                 ),
-                const Spacer(),
                 if (c.hasDemoRecords)
                   TextButton.icon(
                     key: const ValueKey('remove-sample-data'),
@@ -995,6 +1036,17 @@ class _WorkspaceState extends State<_Workspace> {
                       style: TextStyle(fontSize: 11),
                     ),
                   ),
+                IconButton(
+                  key: const ValueKey('clear-inventory'),
+                  tooltip: 'Clear inventory…',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: c.records.isEmpty ? null : _clearInventory,
+                  icon: const Icon(
+                    Icons.delete_forever_outlined,
+                    size: 18,
+                    color: _muted,
+                  ),
+                ),
                 Tooltip(
                   message: _tree ? 'Flat list' : 'Hierarchy view',
                   child: IconButton(

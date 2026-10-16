@@ -120,6 +120,9 @@ The app starts with an empty inventory. Optional demo records and the files unde
 `examples/` are explicitly fictional. **Explore with fictional sample data** adds
 sample records, labeled with source `demo`, only to an empty inventory; **Remove
 sample data** in the inventory table header removes all of them in one change.
+**Clear inventory…** (the delete icon beside it) deletes every local record, or
+one routing domain, after you type `CLEAR`; it offers **Export backup first**,
+keeps change history and does not touch OCI.
 Use a separate routing domain for each
 independent address space; networks connected through a DRG, VPN, FastConnect, or
 another cloud should share the relevant planning scope.
@@ -215,9 +218,13 @@ In the app, open **Import → Discover from OCI CLI**:
    root, such as `root / prod / network`, and the selected OCID is shown below
    the selector. Manual comma-separated regions and compartment OCID entry
    remain available for narrow scopes when enumeration is unavailable; **Load
-   scopes** in manual mode keeps what you typed.
+   scopes** in manual mode keeps what you typed. With tenancy root as the direct
+   compartment, a hint notes that root usually holds no networks.
 3. Enter the routing domain for connectivity and overlap checking, then select
-   **Discover inventory**. Cancel stops collection and discards its result.
+   **Discover inventory**. A progress panel centred over the dialog shows the
+   step, completed region/compartment scopes once known, elapsed time and the
+   collection limit; its **Cancel** stops the request and returns to the form.
+   The dialog's **Cancel** closes discovery and discards its result.
 4. Review the prefix count, validation errors, conflicts, coverage, and observation
    interval in the existing import preview. **Apply** commits the validated batch
    atomically to SQLite; closing the preview leaves inventory unchanged.
@@ -254,7 +261,10 @@ displaying raw response contents. This follows the installed CLI's
 [empty-list rendering behavior](https://github.com/oracle/oci-cli/blob/v3.94.1/src/oci_cli/cli_util.py#L893-L947).
 
 An empty live preview now shows **Discovery completed — no networks found** with
-scope guidance and the scope retry action. No manual CIDR is
+scope guidance. After a direct single-compartment discovery, **Retry with all
+accessible compartments** reruns it at once with the same profile, regions,
+settings and routing domain, including subcompartments; **Review discovery
+scope** opens a fresh dialog. No manual CIDR is
 needed, and Apply stays disabled because there is nothing to save. Malformed data
 still shows its validation error once. Expand **Coverage and observation details**
 for provenance; the summary retains the relevant coverage warnings.
@@ -377,6 +387,30 @@ mkdir -p ~/tmp
   --routing-domain example-connected --collection-timeout 3600
 ```
 
+`clear` deletes local records only; OCI is never contacted. Export a copy first:
+
+```bash
+./scripts/cidrctl --db ~/tmp/cidr-atlas-demo.sqlite \
+  export --file ~/tmp/cidr-atlas-backup.json
+
+# Only one exact routing domain.
+./scripts/cidrctl --db ~/tmp/cidr-atlas-demo.sqlite \
+  clear --routing-domain example-oci --yes
+
+# Every local record.
+./scripts/cidrctl --db ~/tmp/cidr-atlas-demo.sqlite clear --yes
+```
+
+`--yes` is required; without it the command exits 2 and changes nothing. The
+delete is one transaction with one `delete` history entry, and prints `Cleared N
+records from the local inventory. OCI resources were not changed.` (or `from
+routing domain DOMAIN`). Nothing to delete prints `No records to clear.` and
+exits 0, after the usual warning when the routing domain is unknown. `clear`
+never creates an inventory: a missing database file exits 1 with `Inventory not
+found: PATH. Clear never creates an inventory; check --db.` A record in another
+routing domain that names a cleared record as its parent blocks the clear (exit
+1, nothing deleted).
+
 `--auth` accepts `api_key` or `security_token`; without it, authentication follows
 the selected profile's token metadata. Profile and routing domain are required.
 Choose repeated/comma-separated `--region` or `--all-regions`, and
@@ -439,8 +473,8 @@ prefix planning also supports IPv6.
 | Exit code | Meaning |
 | --- | --- |
 | `0` | Command succeeded, or import preview completed |
-| `1` | File, storage, discovery, structural validation, or import failure |
-| `2` | Invalid command usage, including a blank `--db`, a missing `HOME`/`APPDATA` without `--db`, an OCI bundle without `--routing-domain`, `--routing-domain` with a CSV or Atlas backup, and `export --file` naming the open database |
+| `1` | File, storage, discovery, structural validation, or import failure, including `clear` with a missing database |
+| `2` | Invalid command usage, including a blank `--db`, a missing `HOME`/`APPDATA` without `--db`, an OCI bundle without `--routing-domain`, `--routing-domain` with a CSV or Atlas backup, `export --file` naming the open database, and `clear` without `--yes` |
 | `3` | Proposed CIDR conflicts; reserve did not write it |
 
 `check` reports conflicts involving its candidate only. Use `--parent` to declare

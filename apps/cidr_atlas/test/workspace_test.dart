@@ -809,4 +809,215 @@ void main() {
     await tester.pumpAndSettle();
     expect(saved?.parentId, 'placeholder-vcn');
   });
+
+  group('clear inventory', () {
+    void seedTwoDomains() {
+      store.saveAll(const [
+        PrefixRecord(
+          id: 'corp-pool',
+          cidr: '10.80.0.0/16',
+          name: 'Fictional corporate pool',
+          routingDomain: 'corporate',
+          kind: PrefixKind.allocation,
+        ),
+        PrefixRecord(
+          id: 'corp-vcn',
+          cidr: '10.80.0.0/20',
+          name: 'Fictional corporate VCN',
+          routingDomain: 'corporate',
+          parentId: 'corp-pool',
+        ),
+        PrefixRecord(
+          id: 'lab-vcn',
+          cidr: '10.80.0.0/20',
+          name: 'Fictional isolated lab VCN',
+          routingDomain: 'lab-isolated',
+        ),
+      ]);
+      controller.refresh();
+    }
+
+    FilledButton confirmButton(WidgetTester tester) =>
+        tester.widget(find.byKey(const ValueKey('clear-inventory-confirm')));
+
+    Future<void> openClear(WidgetTester tester) async {
+      await tester.tap(find.byKey(const ValueKey('clear-inventory')));
+      await tester.pumpAndSettle();
+      expect(find.text('Clear inventory?'), findsOneWidget);
+    }
+
+    testWidgets('requires typing CLEAR and leaves the empty state', (
+      tester,
+    ) async {
+      seedTwoDomains();
+      await workspace(tester);
+      final history = store.history().length;
+      await openClear(tester);
+      expect(find.text('Everything (3 records)'), findsOneWidget);
+      expect(find.text('Export backup first'), findsOneWidget);
+      expect(
+        find.textContaining('Change history is kept. OCI and other sources'),
+        findsOneWidget,
+      );
+      expect(confirmButton(tester).onPressed, isNull);
+      await tester.enterText(
+        find.byKey(const ValueKey('clear-confirmation')),
+        'clear',
+      );
+      await tester.pump();
+      expect(confirmButton(tester).onPressed, isNull);
+      await tester.enterText(
+        find.byKey(const ValueKey('clear-confirmation')),
+        'CLEAR',
+      );
+      await tester.pump();
+      expect(find.text('Delete 3 records'), findsOneWidget);
+      expect(confirmButton(tester).onPressed, isNotNull);
+      await tester.tap(find.byKey(const ValueKey('clear-inventory-confirm')));
+      await tester.pumpAndSettle();
+      expect(store.list(), isEmpty);
+      expect(controller.records, isEmpty);
+      expect(store.history().length, history + 1);
+      expect(find.text('Build your address map'), findsOneWidget);
+      expect(
+        find.text('Deleted 3 local records. Change history is kept.'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Cancel keeps every record', (tester) async {
+      seedTwoDomains();
+      await workspace(tester);
+      await openClear(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('clear-confirmation')),
+        'CLEAR',
+      );
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(store.list(), hasLength(3));
+    });
+
+    testWidgets('a domain-only clear keeps other routing domains', (
+      tester,
+    ) async {
+      seedTwoDomains();
+      await workspace(tester);
+      final history = store.history().length;
+      await openClear(tester);
+      await tester.tap(find.byKey(const ValueKey('clear-one-domain')));
+      await tester.pumpAndSettle();
+      expect(find.text('Delete 2 records'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('clear-domain')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('lab-isolated (1 record)').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Delete 1 record'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('clear-domain')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('corporate (2 records)').last);
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('clear-confirmation')),
+        'CLEAR',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('clear-inventory-confirm')));
+      await tester.pumpAndSettle();
+      expect(store.list().map((record) => record.id), ['lab-vcn']);
+      expect(store.history().length, history + 1);
+      expect(store.history().first.summary, contains('Deleted 2 prefixes'));
+      expect(find.text('Fictional isolated lab VCN'), findsWidgets);
+      expect(find.text('Build your address map'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('records written outside the window block the clear', (
+      tester,
+    ) async {
+      seedTwoDomains();
+      await workspace(tester);
+      await openClear(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('clear-confirmation')),
+        'CLEAR',
+      );
+      await tester.pump();
+      // cidrctl writes to the shared database while the dialog is open.
+      store.save(
+        const PrefixRecord(
+          id: 'late',
+          cidr: '172.20.0.0/16',
+          name: 'Fictional late allocation',
+          routingDomain: 'corporate',
+          kind: PrefixKind.allocation,
+        ),
+      );
+      await tester.tap(find.byKey(const ValueKey('clear-inventory-confirm')));
+      await tester.pumpAndSettle();
+      expect(find.text('Could not complete the change'), findsOneWidget);
+      expect(
+        find.textContaining('The inventory changed outside this window'),
+        findsOneWidget,
+      );
+      expect(store.list(), hasLength(4));
+    });
+
+    testWidgets('a blocking parent reference is shown and nothing changes', (
+      tester,
+    ) async {
+      seedTwoDomains();
+      controller.dispose();
+      controller = AtlasController(
+        _CrossReferenceStore(store),
+        databasePath: ':memory:',
+      );
+      await workspace(tester);
+      final history = store.history().length;
+      await openClear(tester);
+      await tester.tap(find.byKey(const ValueKey('clear-one-domain')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('clear-confirmation')),
+        'CLEAR',
+      );
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('clear-inventory-confirm')));
+      await tester.pumpAndSettle();
+      expect(find.text('Could not complete the change'), findsOneWidget);
+      expect(
+        find.textContaining('Cannot delete Fictional corporate pool'),
+        findsOneWidget,
+      );
+      expect(store.list(), hasLength(3));
+      expect(store.history().length, history);
+      expect(tester.takeException(), isNull);
+    });
+  });
+}
+
+/// Delegates to a real store but refuses deletes as the store does when a
+/// remaining record names a deleted record as its parent. Current validation
+/// keeps parents in one routing domain, so only an older or externally
+/// edited database can hold such a cross-domain reference.
+class _CrossReferenceStore implements InventoryStore {
+  _CrossReferenceStore(this.inner);
+  final InventoryStore inner;
+
+  @override
+  List<PrefixRecord> list() => inner.list();
+
+  @override
+  List<AuditEntry> history({int limit = 100}) => inner.history(limit: limit);
+
+  @override
+  void deleteAll(List<String> ids) => throw const FormatException(
+    'Cannot delete Fictional corporate pool (10.80.0.0/16): 1 child prefix '
+    'references it: Fictional legacy spoke (10.80.1.0/24). Delete or '
+    're-parent them first.',
+  );
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

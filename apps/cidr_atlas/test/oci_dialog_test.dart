@@ -1107,4 +1107,343 @@ void main() {
     );
     semantics.dispose();
   });
+
+  group('progress overlay', () {
+    Finder formScrollable() => find
+        .descendant(
+          of: find.ancestor(
+            of: find.byType(Form),
+            matching: find.byType(SingleChildScrollView),
+          ),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+
+    Future<void> startPendingDiscovery(
+      WidgetTester tester,
+      FakeOciInventoryClient client,
+    ) async {
+      await openDiscovery(tester, client);
+      await manualScope(tester);
+      await tester.enterText(find.byKey(const ValueKey('oci-domain')), 'corp');
+      await tester.ensureVisible(find.text('Discover inventory'));
+      await tester.tap(find.text('Discover inventory'));
+      await tester.pump();
+    }
+
+    testWidgets(
+      'stays centered in view while the form is scrolled to the top',
+      (tester) async {
+        final client = FakeOciInventoryClient()
+          ..pending = Completer<OciDiscovery>();
+        await startPendingDiscovery(tester, client);
+        final position = tester
+            .state<ScrollableState>(formScrollable())
+            .position;
+        expect(position.maxScrollExtent, greaterThan(0));
+        position.jumpTo(0);
+        await tester.pump();
+        expect(position.pixels, 0);
+        final viewport = tester.getRect(formScrollable());
+        final card = tester.getRect(
+          find.byKey(const ValueKey('oci-progress-card')),
+        );
+        expect(viewport.contains(card.topLeft), isTrue);
+        expect(viewport.contains(card.bottomRight), isTrue);
+        expect((card.center.dy - viewport.center.dy).abs(), lessThan(2));
+        expect(
+          find.byKey(const ValueKey('oci-progress-cancel')).hitTestable(),
+          findsOneWidget,
+        );
+        expect(find.text('Discovering OCI inventory'), findsOneWidget);
+        expect(
+          find.text('Reading selected VCNs').hitTestable(),
+          findsOneWidget,
+        );
+        // The barrier blocks the form underneath.
+        expect(find.text('OCI profile').hitTestable(), findsNothing);
+        expect(find.text('Elapsed 00:00'), findsOneWidget);
+        await tester.pump(const Duration(seconds: 65));
+        expect(find.text('Elapsed 01:05'), findsOneWidget);
+        client.pending!.complete(const OciDiscovery(bundleJson: bundle));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('oci-progress-overlay')),
+          findsNothing,
+        );
+        expect(find.text('Discover OCI inventory'), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets('shows structured scope counts and the collection limit', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      final client = FakeOciInventoryClient()
+        ..pending = Completer<OciDiscovery>();
+      await startPendingDiscovery(tester, client);
+      expect(
+        find.text(
+          'Collection limit 3 min; a timeout returns no partial inventory.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('oci-progress-scopes')), findsNothing);
+      expect(
+        tester
+            .widget<LinearProgressIndicator>(
+              find.byKey(const ValueKey('oci-progress-bar')),
+            )
+            .value,
+        isNull,
+      );
+      client.reportProgress!(
+        const OciDiscoveryProgress(
+          message: 'Reading VCNs in us-phoenix-1 / fictional-network',
+          collectionTimeout: OciCollectionLimits.broadScope,
+          scopeCount: 4,
+          completedScopes: 1,
+        ),
+      );
+      await tester.pump();
+      expect(find.text('1 of 4 region/compartment scopes'), findsOneWidget);
+      expect(
+        find.text(
+          'Collection limit 30 min; a timeout returns no partial inventory.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<LinearProgressIndicator>(
+              find.byKey(const ValueKey('oci-progress-bar')),
+            )
+            .value,
+        .25,
+      );
+      expect(
+        tester.getSemantics(
+          find.text('Reading VCNs in us-phoenix-1 / fictional-network'),
+        ),
+        isSemantics(isLiveRegion: true),
+      );
+      client.pending!.complete(const OciDiscovery(bundleJson: bundle));
+      await tester.pumpAndSettle();
+      semantics.dispose();
+    });
+
+    testWidgets('Cancel stops discovery and returns to the form', (
+      tester,
+    ) async {
+      final client = FakeOciInventoryClient()
+        ..pending = Completer<OciDiscovery>();
+      await startPendingDiscovery(tester, client);
+      await tester.tap(find.byKey(const ValueKey('oci-progress-cancel')));
+      await tester.pump();
+      expect(client.cancellation!.isCancelled, isTrue);
+      expect(find.byKey(const ValueKey('oci-progress-overlay')), findsNothing);
+      client.pending!.complete(const OciDiscovery(bundleJson: bundle));
+      await tester.pumpAndSettle();
+      // The late result is ignored; the dialog stays for another attempt.
+      expect(find.text('Discover OCI inventory'), findsOneWidget);
+      expect(
+        find.textContaining('Discovery cancelled. No inventory was returned'),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Discover inventory'),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Cancel stops scope loading', (tester) async {
+      final client = FakeOciInventoryClient()
+        ..pendingRegions = Completer<List<OciRegion>>();
+      await openDiscovery(tester, client);
+      await tester.tap(find.text('Load scopes'));
+      await tester.pump();
+      expect(find.text('Loading OCI scopes'), findsOneWidget);
+      expect(find.byKey(const ValueKey('oci-progress-limit')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('oci-progress-cancel')));
+      await tester.pump();
+      expect(client.cancellation!.isCancelled, isTrue);
+      client.pendingRegions!.complete(const [
+        OciRegion(name: 'late-region', status: 'READY'),
+      ]);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Scope loading cancelled'), findsOneWidget);
+      expect(find.text('late-region'), findsNothing);
+      expect(find.text('Discover OCI inventory'), findsOneWidget);
+    });
+
+    testWidgets('closes on error and the error is scrolled into view', (
+      tester,
+    ) async {
+      final client = FakeOciInventoryClient()
+        ..pending = Completer<OciDiscovery>();
+      await startPendingDiscovery(tester, client);
+      tester.state<ScrollableState>(formScrollable()).position.jumpTo(0);
+      await tester.pump();
+      client.pending!.completeError(
+        const OciException('Session expired. Repair the OCI CLI profile.'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('oci-progress-overlay')), findsNothing);
+      expect(
+        find.text('Session expired. Repair the OCI CLI profile.').hitTestable(),
+        findsOneWidget,
+      );
+      expect(find.text('Discover OCI inventory'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  testWidgets('a direct tenancy root compartment explains child coverage', (
+    tester,
+  ) async {
+    const hint =
+        'Tenancy root usually holds no networks; enable all accessible '
+        'compartments to include children.';
+    final client = FakeOciInventoryClient();
+    await openDiscovery(tester, client);
+    expect(find.text(hint), findsNothing);
+    await tester.tap(find.text('Load scopes'));
+    await tester.pumpAndSettle();
+    // Load scopes selects the tenancy root.
+    expect(find.text(hint), findsOneWidget);
+    await tester.ensureVisible(compartmentSelector());
+    await tester.tap(compartmentSelector());
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.textContaining('Fictional architecture compartment').last,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(hint), findsNothing);
+    await tester.ensureVisible(find.text('Enter scope manually'));
+    await tester.tap(find.text('Enter scope manually'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('oci-compartment')),
+      'ocid1.tenancy.oc1..fictional',
+    );
+    await tester.pump();
+    expect(find.text(hint), findsOneWidget);
+    final all = find.byKey(const ValueKey('oci-all-compartments'));
+    await tester.ensureVisible(all);
+    await tester.tap(all);
+    await tester.pumpAndSettle();
+    expect(find.text(hint), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  group('retry with all accessible compartments', () {
+    testWidgets('an empty direct-compartment result retries more broadly', (
+      tester,
+    ) async {
+      final client = FakeOciInventoryClient()
+        ..json = '{"vcns":[],"subnets":[]}';
+      await openImport(tester, client);
+      await tester.ensureVisible(
+        find.byType(DropdownButtonFormField<OciAuthMode>),
+      );
+      await tester.tap(find.byType(DropdownButtonFormField<OciAuthMode>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Security token').last);
+      await tester.pumpAndSettle();
+      await discover(tester);
+      await tester.pumpAndSettle();
+      expect(client.requestedAllCompartments, isFalse);
+      expect(
+        find.text('Discovery completed — no networks found'),
+        findsOneWidget,
+      );
+      final retry = find.byKey(const ValueKey('oci-retry-all-compartments'));
+      expect(
+        find.text('Retry with all accessible compartments'),
+        findsOneWidget,
+      );
+      client.json = bundle;
+      await tester.ensureVisible(retry);
+      await tester.tap(retry);
+      await tester.pumpAndSettle();
+      // Discovery started without another click, with the same choices.
+      expect(client.networkCalls, 2);
+      expect(client.requestedAllCompartments, isTrue);
+      expect(client.requestedCompartment, isNull);
+      expect(client.requestedRegions, ['us-phoenix-1']);
+      expect(client.requestedAllRegions, isFalse);
+      expect(client.requestedProfile, 'DEFAULT');
+      expect(client.requestedAuth, OciAuthMode.securityToken);
+      expect(find.text('Discover OCI inventory'), findsNothing);
+      expect(find.text('1 network CIDR · OCI JSON'), findsOneWidget);
+      expect(find.text('Fictional VCN'), findsOneWidget);
+      expect(find.text('corporate'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('an empty all-compartments result offers no retry', (
+      tester,
+    ) async {
+      final client = FakeOciInventoryClient()
+        ..json = '{"vcns":[],"subnets":[]}';
+      await openImport(tester, client);
+      await manualScope(tester);
+      final all = find.byKey(const ValueKey('oci-all-compartments'));
+      await tester.ensureVisible(all);
+      await tester.tap(all);
+      await tester.enterText(
+        find.byKey(const ValueKey('oci-domain')),
+        'corporate',
+      );
+      await tester.tap(find.text('Discover inventory'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Discovery completed — no networks found'),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('oci-retry-all-compartments')),
+        findsNothing,
+      );
+      expect(find.text('Review discovery scope'), findsOneWidget);
+    });
+
+    testWidgets('a preset profile that no longer exists does not start', (
+      tester,
+    ) async {
+      final client = FakeOciInventoryClient();
+      tester.view.physicalSize = const Size(1100, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: OciDiscoveryDialog(
+              client: client,
+              domain: 'corp',
+              initialScope: const OciDiscoveryScope(
+                profile: 'RETIRED',
+                regions: ['us-phoenix-1'],
+                allCompartments: true,
+              ),
+              startImmediately: true,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(client.networkCalls, 0);
+      expect(
+        find.textContaining('The OCI profile "RETIRED" used by the previous'),
+        findsOneWidget,
+      );
+    });
+  });
 }

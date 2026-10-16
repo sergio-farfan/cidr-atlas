@@ -14,8 +14,9 @@ New installations start empty; optional demo inventories are fictional.
 
 The last published release is v0.3.0 (see Release status). The working tree
 also holds an unreleased review remediation, recorded in
-[the remediation plan](docs/plans/2026-10-16-review-remediation.md). No new build,
-DMG or release has been produced from it, and version numbers are unchanged.
+[the remediation plan](docs/plans/2026-10-16-review-remediation.md), and the
+inventory-clearing and discovery-progress changes listed below. No release has
+been published from it; the app and CLI are versioned 0.4.0.
 
 The v0.3.0 implementation adds one/several selected regions or all READY subscribed
 regions, independently paired with one direct compartment or all accessible active
@@ -98,6 +99,19 @@ Unreleased remediation, by package (details in `docs/CONTRACT.md`):
   labeled and removable sample data, history paging, an optional
   discovery time limit, and screen-reader semantics for candidates, errors and
   progress.
+- **Clear inventory:** **Clear inventory…** in the inventory table header deletes
+  every local record or one routing domain after the user types `CLEAR`, with
+  **Export backup first**, one transaction and one history entry; a count changed
+  by `cidrctl` meanwhile deletes nothing. `cidrctl clear [--routing-domain D]
+  --yes` does the same from the CLI, requires `--yes` (exit 2 otherwise) and
+  never creates a missing database (exit 1). OCI is never touched.
+- **Discovery usability:** a modal progress panel centred over the discovery
+  dialog (step, scope progress bar, elapsed time, collection limit, its own
+  Cancel) replaces the in-form indicator that could sit below the visible area;
+  later errors scroll into view. A hint flags tenancy root as the direct
+  compartment, and an empty direct-compartment result offers **Retry with all
+  accessible compartments**, which reruns discovery at once with the same
+  profile, settings, regions and routing domain.
 - **Hygiene:** consistent lint configuration in every package
   (`package:lints/recommended.yaml`; `flutter_lints` for the app), missing file
   headers, `scripts/cidrctl` dependency freshness, DMG staging under `build/`,
@@ -149,10 +163,12 @@ Unreleased remediation, verified 2026-10-16 on the working tree:
 - Data/imports: 124 tests passed (v0.3.0: 78).
 - OCI adapter: 110 tests passed (v0.3.0: 83; before the remediation this machine
   ran 82 plus one failure that depended on `PUB_CACHE` being set, now fixed).
-- CLI: 83 tests passed (v0.3.0: 49).
-- Flutter: 116 widget tests passed (v0.3.0: 72).
+- CLI: 98 tests passed (v0.3.0: 49), rerun after adding `clear`.
+- Flutter: 130 widget tests passed (v0.3.0: 72), rerun after adding clear
+  inventory, the progress panel and the all-compartments retry.
 
-All 505 package/widget tests passed. `dart format --set-exit-if-changed` changed no
+All 534 package/widget tests passed (core, data and OCI adapter counts are from
+the remediation run; those packages are unchanged since). `dart format --set-exit-if-changed` changed no
 files in any package, and `dart analyze` / `flutter analyze` reported no issues
 under the stricter lint configuration. Tests use fictional runners, isolated
 temporary or memory stores and a fictional `HOME`; no live tenancy was collected,
@@ -220,8 +236,8 @@ Signing is ad hoc; no Developer ID signature or notarization ticket exists. Loca
 verification does not establish Gatekeeper acceptance on another Mac. The app has
 App Sandbox disabled for local CLI process access and shared app/CLI storage.
 
-Versions are unchanged by the remediation: `cidr_core`, `cidr_data` and `cidr_oci`
-are 0.1.0, `cidr_cli` is 0.3.0 and the app is 0.3.0+4. `cidrctl --version` comes
+`cidr_core`, `cidr_data` and `cidr_oci` remain 0.1.0; `cidr_cli` is 0.4.0 and
+the app is 0.4.0+5, neither yet released. `cidrctl --version` comes
 from a constant in `packages/cidr_cli/lib/cidr_cli.dart`; a test now ties it to
 the CLI pubspec. The declared SDK floors (>=3.4.0 for core and OCI, >=3.5.0 for
 data and CLI) are lower than the lockfiles resolve (>=3.11.0); raising them to
@@ -230,8 +246,9 @@ data and CLI) are lower than the lockfiles resolve (>=3.11.0); raising them to
 
 ## Next actions
 
-Review and commit the remediation, then build, natively verify and publish a
-release that includes it. Decisions recorded in the remediation plan:
+Review and commit the remediation and the clear-inventory/discovery-progress
+changes, then build, natively verify (including the centred progress panel and
+the Clear inventory dialog on macOS) and publish a release that includes them. Decisions recorded in the remediation plan:
 
 - All-compartments mode: continue past a compartment that denies network listing
   and record it as unobserved coverage, instead of failing the whole collection

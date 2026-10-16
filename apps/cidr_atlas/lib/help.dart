@@ -186,6 +186,12 @@ class _AtlasHelpDialogState extends State<AtlasHelpDialog> {
         'does not create an OCI resource. Export JSON after important changes; '
         'transfer exports instead of sharing a live SQLite database.',
       ),
+      _paragraph(
+        'To start over, use Clear inventory (the delete icon above the '
+        'inventory table): delete every record or one routing domain after '
+        'typing CLEAR. Export a backup first if needed. Change history is '
+        'kept and OCI is not touched.',
+      ),
     ],
     HelpTopic.imports => [
       _paragraph(
@@ -291,6 +297,12 @@ class _AtlasHelpDialogState extends State<AtlasHelpDialog> {
         'permissions and region subscriptions. Entering a new range belongs '
         'in New prefix or Planner.',
       ),
+      _paragraph(
+        'After an empty result from one direct compartment, Retry with all '
+        'accessible compartments starts discovery again at once with the same '
+        'profile, authentication, regions, and routing domain, including '
+        'subcompartments. Tenancy root usually holds no networks itself.',
+      ),
       _heading('If a request fails'),
       _paragraph(
         'Repair the selected CLI credentials or renew an expired session '
@@ -301,8 +313,12 @@ class _AtlasHelpDialogState extends State<AtlasHelpDialog> {
       _paragraph(
         'CLI and configuration paths accepts optional executable/configuration '
         'paths. Opening discovery reads profile-selection metadata; network '
-        'requests begin with Load scopes or Discover inventory. Cancel discards '
-        'the result. Coverage describes a scoped observation, not a complete '
+        'requests begin with Load scopes or Discover inventory. While they run, '
+        'a progress panel centered over the dialog shows the current step, '
+        'completed region/compartment scopes when known, elapsed time, and the '
+        'collection limit; its Cancel stops the request and returns to the '
+        'form. The dialog Cancel closes discovery and discards the result. '
+        'Coverage describes a scoped observation, not a complete '
         'tenancy audit; omitted ranges are not evidence of free space.',
       ),
       _heading('Official Oracle references — select or copy a URL'),

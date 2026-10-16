@@ -179,6 +179,41 @@ class AtlasController extends ChangeNotifier {
     refresh();
   }
 
+  /// Ids of the stored records in [routingDomain], or in every routing
+  /// domain when it is null, read from the store rather than the last refresh.
+  List<String> _clearTargets(String? routingDomain) => [
+    for (final record in store.list())
+      if (routingDomain == null || record.routingDomain == routingDomain)
+        record.id,
+  ];
+
+  /// Deletes every local record, or only those in [routingDomain], in one
+  /// store transaction with one audit entry. History is kept and nothing
+  /// outside the local database changes. The database is shared with
+  /// cidrctl, so when [expectedCount] is given and the store now holds a
+  /// different number of matching records, nothing is deleted and the
+  /// current records are shown. A remaining record that names a deleted
+  /// record as its parent blocks the clear with the store's explanation.
+  void clearInventory({String? routingDomain, int? expectedCount}) {
+    final ids = _clearTargets(routingDomain);
+    if (expectedCount != null && ids.length != expectedCount) {
+      refresh();
+      throw FormatException(
+        'The inventory changed outside this window: it now holds '
+        '${ids.length} matching record${ids.length == 1 ? '' : 's'}, not '
+        'the $expectedCount you confirmed. Nothing was deleted. The current '
+        'records are now shown; review them and clear again.',
+      );
+    }
+    if (ids.isEmpty) {
+      refresh();
+      return;
+    }
+    store.deleteAll(ids);
+    if (ids.contains(selectedId)) selectedId = null;
+    refresh();
+  }
+
   /// Adds the fictional sample inventory to an empty database. The database
   /// is shared with cidrctl, so emptiness is checked against the store, not
   /// against the last refresh.

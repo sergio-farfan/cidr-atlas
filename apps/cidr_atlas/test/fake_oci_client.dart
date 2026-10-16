@@ -21,6 +21,10 @@ class FakeOciInventoryClient implements OciInventoryClient {
   bool requestedAllCompartments = false;
   String? requestedCompartment;
   OciCancellation? cancellation;
+
+  /// The structured progress callback of the latest discovery, so a test can
+  /// report scope counts while [pending] is unresolved.
+  void Function(OciDiscoveryProgress)? reportProgress;
   Completer<OciDiscovery>? pending;
   Completer<List<OciRegion>>? pendingRegions;
   OciException? scopeError;
@@ -117,6 +121,7 @@ class FakeOciInventoryClient implements OciInventoryClient {
     requestedAllRegions = allRegions;
     requestedAllCompartments = allCompartments;
     requestedCompartment = compartmentId;
+    reportProgress = onDiscoveryProgress;
     onProgress?.call('Reading selected VCNs');
     onDiscoveryProgress?.call(
       const OciDiscoveryProgress(

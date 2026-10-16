@@ -678,6 +678,9 @@ class _ImportDialogState extends State<ImportDialog> {
   int _combinedConflicts = 0;
   List<String> _ociWarnings = [];
   bool _liveDiscovery = false;
+
+  /// The scope of the completed OCI discovery shown in the preview.
+  OciDiscoveryScope? _ociScope;
   @override
   void initState() {
     super.initState();
@@ -714,6 +717,7 @@ class _ImportDialogState extends State<ImportDialog> {
         _fileError = null;
         _ociWarnings = [];
         _liveDiscovery = false;
+        _ociScope = null;
       });
       _parse();
     } catch (error) {
@@ -772,7 +776,12 @@ class _ImportDialogState extends State<ImportDialog> {
     }
   }
 
-  Future<void> _discoverOci() async {
+  /// Opens OCI discovery. [initialScope] presets the dialog, and
+  /// [startImmediately] starts that scope without another click.
+  Future<void> _discoverOci({
+    OciDiscoveryScope? initialScope,
+    bool startImmediately = false,
+  }) async {
     setState(() {
       _preview = null;
       _text = null;
@@ -780,6 +789,7 @@ class _ImportDialogState extends State<ImportDialog> {
       _fileError = null;
       _ociWarnings = [];
       _liveDiscovery = false;
+      _ociScope = null;
       _combinedErrors = [];
       _combinedConflicts = 0;
     });
@@ -789,6 +799,8 @@ class _ImportDialogState extends State<ImportDialog> {
         client: widget.ociClient,
         clientFactory: widget.ociClientFactory,
         domain: _domain.text,
+        initialScope: initialScope,
+        startImmediately: startImmediately,
       ),
     );
     if (!mounted || selection == null) return;
@@ -799,6 +811,7 @@ class _ImportDialogState extends State<ImportDialog> {
       _domain.text = selection.routingDomain;
       _ociWarnings = selection.warnings;
       _liveDiscovery = true;
+      _ociScope = selection.scope;
     });
     _parse();
   }
@@ -807,6 +820,7 @@ class _ImportDialogState extends State<ImportDialog> {
   Widget build(BuildContext context) {
     final preview = _preview;
     final emptyDiscovery = _liveDiscovery && preview?.isEmptyResult == true;
+    final directScope = _ociScope?.allCompartments == false ? _ociScope : null;
     final warnings = {..._ociWarnings, ...?preview?.warnings};
     final detailWarnings = warnings
         .where(
@@ -890,10 +904,33 @@ class _ImportDialogState extends State<ImportDialog> {
                     const MessagePanel(
                       message: 'No manual CIDR is needed for OCI discovery. There is nothing to save. Review the profile, resource regions, selected scope and IAM permissions. For a direct compartment, networks may be in a child; enable all compartments or select that child. If all compartments are included, check permissions and region subscriptions.',
                     ),
-                    TextButton.icon(
-                      onPressed: _discoverOci,
-                      icon: const Icon(Icons.refresh, size: 18),
-                      label: const Text('Review discovery scope'),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        if (directScope != null)
+                          FilledButton.icon(
+                            key: const ValueKey('oci-retry-all-compartments'),
+                            onPressed: () => _discoverOci(
+                              initialScope: directScope.withAllCompartments(),
+                              startImmediately: true,
+                            ),
+                            icon: const Icon(
+                              Icons.account_tree_outlined,
+                              size: 18,
+                            ),
+                            label: const Text(
+                              'Retry with all accessible compartments',
+                            ),
+                          ),
+                        TextButton.icon(
+                          onPressed: _discoverOci,
+                          icon: const Icon(Icons.refresh, size: 18),
+                          label: const Text('Review discovery scope'),
+                        ),
+                      ],
                     ),
                   ],
                   if (!emptyDiscovery &&
@@ -1005,6 +1042,209 @@ class _ImportDialogState extends State<ImportDialog> {
               ? () => Navigator.pop(context, preview)
               : null,
           child: const Text('Apply import'),
+        ),
+      ],
+    );
+  }
+}
+
+/// The scope confirmed in [ClearInventoryDialog]: every record, or only the
+/// records of one routing domain, with the count the user saw.
+class ClearInventoryRequest {
+  const ClearInventoryRequest({this.routingDomain, required this.count});
+
+  /// Null clears every routing domain.
+  final String? routingDomain;
+  final int count;
+}
+
+/// Confirms deleting local inventory records: everything, or one routing
+/// domain. Offers a backup export first and enables the destructive action
+/// only after the user types [confirmationWord].
+class ClearInventoryDialog extends StatefulWidget {
+  const ClearInventoryDialog({
+    super.key,
+    required this.records,
+    required this.onExportBackup,
+    this.initialDomain,
+  });
+  final List<PrefixRecord> records;
+
+  /// Runs the existing JSON backup export.
+  final Future<void> Function() onExportBackup;
+
+  /// Routing domain preselected for a domain-only clear, such as the current
+  /// filter.
+  final String? initialDomain;
+
+  static const confirmationWord = 'CLEAR';
+
+  @override
+  State<ClearInventoryDialog> createState() => _ClearInventoryDialogState();
+}
+
+class _ClearInventoryDialogState extends State<ClearInventoryDialog> {
+  final _confirm = TextEditingController();
+  late final Map<String, int> _counts;
+  late String? _domain;
+  bool _everything = true;
+  bool _exporting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final counts = <String, int>{};
+    for (final record in widget.records) {
+      counts.update(record.routingDomain, (n) => n + 1, ifAbsent: () => 1);
+    }
+    _counts = Map.fromEntries(
+      counts.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
+    );
+    _domain = _counts.containsKey(widget.initialDomain)
+        ? widget.initialDomain
+        : _counts.keys.firstOrNull;
+  }
+
+  @override
+  void dispose() {
+    _confirm.dispose();
+    super.dispose();
+  }
+
+  static String _records(int count) => '$count record${count == 1 ? '' : 's'}';
+
+  int get _count =>
+      _everything ? widget.records.length : (_counts[_domain] ?? 0);
+
+  bool get _confirmed =>
+      _confirm.text.trim() == ClearInventoryDialog.confirmationWord;
+
+  Future<void> _export() async {
+    setState(() => _exporting = true);
+    try {
+      await widget.onExportBackup();
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final count = _count;
+    final scope = _everything
+        ? 'every routing domain'
+        : 'routing domain ${_domain ?? ''}';
+    final danger = Theme.of(context).colorScheme.error;
+    return AlertDialog(
+      title: const Text('Clear inventory?'),
+      content: SizedBox(
+        width: 560,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              RadioGroup<bool>(
+                groupValue: _everything,
+                onChanged: (value) =>
+                    setState(() => _everything = value ?? true),
+                child: Column(
+                  children: [
+                    RadioListTile<bool>(
+                      key: const ValueKey('clear-everything'),
+                      value: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        'Everything (${_records(widget.records.length)})',
+                      ),
+                    ),
+                    RadioListTile<bool>(
+                      key: const ValueKey('clear-one-domain'),
+                      value: false,
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Only routing domain'),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 16),
+                child: DropdownButtonFormField<String>(
+                  key: const ValueKey('clear-domain'),
+                  initialValue: _domain,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Routing domain',
+                  ),
+                  items: [
+                    for (final entry in _counts.entries)
+                      DropdownMenuItem(
+                        value: entry.key,
+                        child: Text(
+                          '${entry.key} (${_records(entry.value)})',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: _everything
+                      ? null
+                      : (value) => setState(() => _domain = value),
+                ),
+              ),
+              const SizedBox(height: 18),
+              MessagePanel(
+                error: true,
+                message:
+                    'This permanently deletes ${_records(count)} in $scope '
+                    'from this local database in one change. Change history '
+                    'is kept. OCI and other sources are not touched; '
+                    'discovering or importing again restores observed '
+                    'networks, but not local planning fields. Export a '
+                    'backup first if you may need these records.',
+              ),
+              const SizedBox(height: 14),
+              OutlinedButton.icon(
+                key: const ValueKey('clear-export-backup'),
+                onPressed: _exporting ? null : _export,
+                icon: const Icon(Icons.file_upload_outlined, size: 17),
+                label: const Text('Export backup first'),
+              ),
+              const SizedBox(height: 18),
+              TextField(
+                key: const ValueKey('clear-confirmation'),
+                controller: _confirm,
+                autocorrect: false,
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  labelText:
+                      'Type ${ClearInventoryDialog.confirmationWord} to confirm',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          key: const ValueKey('clear-inventory-confirm'),
+          style: FilledButton.styleFrom(
+            backgroundColor: danger,
+            foregroundColor: Theme.of(context).colorScheme.onError,
+          ),
+          onPressed: _confirmed && count > 0 && !_exporting
+              ? () => Navigator.pop(
+                  context,
+                  ClearInventoryRequest(
+                    routingDomain: _everything ? null : _domain,
+                    count: count,
+                  ),
+                )
+              : null,
+          child: Text('Delete ${_records(count)}'),
         ),
       ],
     );

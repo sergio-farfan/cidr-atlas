@@ -32,7 +32,10 @@ URLs can be selected and copied. Closing help retains the parent form or preview
    root and every accessible active descendant in each chosen region.
    Compartments are shown by path, such as `root / prod / network`, so
    same-named compartments can be told apart; the selected OCID appears below
-   the selector.
+   the selector. When the direct compartment is the tenancy root (the default
+   after **Load scopes**, or the tenancy OCID typed manually), a hint notes that
+   root usually holds no networks; enable all accessible compartments to include
+   its children.
 4. Enter a routing-domain name and select **Discover inventory**.
 5. Review the combined network CIDR count, validation, conflicts, coverage and
    observation details. **Apply import** saves a nonempty valid batch locally,
@@ -54,6 +57,17 @@ default region to list subscriptions. Non-READY subscriptions are excluded and
 reported. If a required list fails, the run stops with its failing scope and no
 partial import can be applied. Use a narrower scope or correct permissions before
 retrying. Cancellation leaves local inventory unchanged.
+
+While profiles are read, scopes load or discovery runs, a progress panel appears
+centred over the dialog, whatever the scroll position, and the form behind it is
+locked. It shows the step (**Reading OCI profiles**, **Loading OCI scopes** or
+**Discovering OCI inventory**), a progress bar that fills once the region and
+compartment scope count is known (for example `2 of 6 region/compartment
+scopes`), the current step, announced to screen readers, the elapsed time
+(`Elapsed 01:05`) and, for discovery, the collection limit in effect. The panel's
+**Cancel** stops the running request and returns to the form with a notice; the
+dialog's own **Cancel** closes discovery and discards any result. Errors that
+follow, such as a reached time limit, are scrolled into view.
 
 Collection stops after 3 minutes for one region and compartment, or 30 minutes
 for broader scopes. For a large tenancy, enter whole minutes from 1 to 1440 in
@@ -83,8 +97,13 @@ and [session-token lifecycle](https://docs.oracle.com/en-us/iaas/Content/API/SDK
 **Discovery completed — no networks found** means the selected scope returned no
 VCN/subnet CIDRs. No manual CIDR is needed, and Apply is disabled because there
 is nothing to save. Review the profile/tenancy, selected regions, compartment mode and IAM permissions.
-Use the scope retry action to discover again. In single-compartment mode, tenancy
-root can be empty while child compartments contain networks. All-compartment mode
+In single-compartment mode, tenancy root can be empty while child compartments
+contain networks. After a single-compartment discovery, **Retry with all
+accessible compartments** starts discovery again at once with the same profile,
+authentication, paths, time limit, regions and routing domain, including
+subcompartments. If that profile is no longer in the configuration, nothing
+starts and the dialog asks you to select a profile. **Review discovery scope**
+opens a fresh discovery dialog. All-compartment mode
 already includes accessible children; it does not establish visibility of hidden
 resources.
 
@@ -190,6 +209,8 @@ cidrctl --db ~/tmp/cidr-atlas-example.sqlite discover oci --profile EXAMPLE --re
 cidrctl --db ~/tmp/cidr-atlas-example.sqlite discover oci --profile EXAMPLE --all-regions --all-compartments --routing-domain fictional-connected
 cidrctl --db ~/tmp/cidr-atlas-example.sqlite recommend --pool 10.90.0.0/20 --routing-domain fictional-connected --prefix 24
 cidrctl --db ~/tmp/cidr-atlas-example.sqlite recommend --pool 10.90.0.0/20 --routing-domain fictional-connected --addresses 100 --growth-percent 20 --additional 4 --policy oci_ipv4 --kind subnet
+cidrctl --db ~/tmp/cidr-atlas-example.sqlite export --file ~/tmp/cidr-atlas-example-backup.json
+cidrctl --db ~/tmp/cidr-atlas-example.sqlite clear --routing-domain fictional-connected --yes
 ```
 
 For discovery, use repeated/comma-separated `--region` or `--all-regions`, and
@@ -205,8 +226,11 @@ and creates no database. A routing domain with no existing records prints a
 warning naming known domains and near matches. A recommendation preview with no
 fitting candidate exits 0 with a warning; `--apply` then exits 1. Add
 `--collection-timeout SECONDS` (30 to 86400) for a broad discovery that needs
-more than the default limit. `cidrctl --help` and each command's `--help`
-include workflow guidance.
+more than the default limit. `clear --yes` deletes every local record, or with
+`--routing-domain` only that exact domain, in one transaction with one history
+entry; OCI is not contacted. Without `--yes` it exits 2 and changes nothing, and
+a missing database file exits 1 rather than being created. `cidrctl --help` and
+each command's `--help` include workflow guidance.
 Keep live-discovery databases and exported backups in a protected directory,
 not a shared one such as `/tmp`, and transfer JSON files rather than
 synchronizing a live SQLite database through shared folders.
@@ -222,3 +246,12 @@ and edit status, parent, customer, owner, environment and notes locally. A
 parent with children cannot be deleted until the children are deleted or
 re-parented. History shows the latest 100 changes, with **Load more** when
 older changes exist.
+
+To start over, select **Clear inventory…** (the delete icon in the inventory
+table header). Choose **Everything** or **Only routing domain** (the current
+domain filter is preselected), optionally **Export backup first**, then type
+`CLEAR` to enable **Delete N records**. The records are deleted from the local
+database in one change; history is kept and OCI is not touched. Discovering or
+importing again restores observed networks, but not local planning fields such
+as owner, status and notes. If `cidrctl` changed the inventory after the dialog
+opened, nothing is deleted and the current records are shown for review.

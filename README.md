@@ -72,9 +72,9 @@ The build output is `apps/cidr_atlas/build/macos/Build/Products/Release/`.
 
 ## macOS releases
 
-The private repository's [v0.2.0 release page](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.0)
-provides the [universal macOS DMG](https://github.com/sergio-farfan/cidr-atlas/releases/download/v0.2.0/CIDR-Atlas-0.2.0-macos-universal.dmg)
-and [SHA-256 checksum](https://github.com/sergio-farfan/cidr-atlas/releases/download/v0.2.0/CIDR-Atlas-0.2.0-macos-universal.dmg.sha256).
+The private repository's [v0.2.1 release page](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.1)
+provides the [universal macOS DMG](https://github.com/sergio-farfan/cidr-atlas/releases/download/v0.2.1/CIDR-Atlas-0.2.1-macos-universal.dmg)
+and [SHA-256 checksum](https://github.com/sergio-farfan/cidr-atlas/releases/download/v0.2.1/CIDR-Atlas-0.2.1-macos-universal.dmg.sha256).
 Repository access is required to download private release assets.
 
 Build the disk image on a Mac with the requirements above:
@@ -89,8 +89,8 @@ contents, then writes a SHA-256 checksum. Use `--skip-build` only when packaging
 an existing release build. Output is written under `build/releases/`:
 
 ```text
-CIDR-Atlas-0.2.0-macos-universal.dmg
-CIDR-Atlas-0.2.0-macos-universal.dmg.sha256
+CIDR-Atlas-0.2.1-macos-universal.dmg
+CIDR-Atlas-0.2.1-macos-universal.dmg.sha256
 ```
 
 The image contains the app, an Applications shortcut, installation instructions,
@@ -103,6 +103,18 @@ the script's command options are checked against the installed `hdiutil` tools.
 The standalone CLI is built separately with `scripts/build_cli.sh`.
 
 ## First use
+
+Open **Help and examples** in the workspace header for a local guide with
+copyable examples. **Import help**, **Discovery help**, and **Planner help** open
+the relevant topic while retaining the form or preview. The guide covers OCI
+scope selection, empty results, offline files, CIDR sizes, routing domains,
+capacity, planning, and CLI usage. See the [user guide](docs/user-guide.md).
+
+OCI discovery supplies existing CIDRs automatically. The preview count reports
+returned networks; it does not ask you to type a prefix. Enter a full CIDR when
+adding a manual record or specifying a planning boundary. In **Requested prefix
+length**, enter the new child size, such as `24`, or use address-demand mode to
+let the app select the size.
 
 The app starts with an empty inventory. Optional demo records and the files under
 `examples/` are explicitly fictional. Use a separate routing domain for each
@@ -194,6 +206,12 @@ empty. Check the actual resource compartment when tenancy root is empty. Genuine
 malformed responses identify the failed step and expected structure without
 displaying raw response contents. This follows the installed CLI's
 [empty-list rendering behavior](https://github.com/oracle/oci-cli/blob/v3.94.1/src/oci_cli/cli_util.py#L893-L947).
+
+An empty live preview now shows **Discovery completed — no networks found** with
+scope guidance and **Choose another compartment or region**. No manual CIDR is
+needed, and Apply stays disabled because there is nothing to save. Malformed data
+still shows its validation error once. Expand **Coverage and observation details**
+for provenance; the summary retains the relevant coverage warnings.
 
 For a subnet whose VCN is absent from the selected-compartment list, discovery
 fetches that VCN once by ID as relationship context. It does not enumerate that
@@ -350,7 +368,7 @@ parents; use `export` for a portable backup.
 
 ## Imports and backup
 
-CSV uses these case-sensitive headers:
+CSV uses the following documented headers:
 
 ```text
 id,cidr,name,routingDomain,kind,status,customer,tenancy,region,compartment,environment,owner,resourceId,vcnId,parentId,notes,source,verifiedAt

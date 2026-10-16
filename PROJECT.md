@@ -1,5 +1,7 @@
 # CIDR Atlas
 
+Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 ## Agreed direction
 
 Mac-first desktop application for managing OCI VCN/subnet CIDRs and planning nonconflicting address allocations. Future iOS, Windows, and Linux applications share the same Dart engine; macOS, Windows, and Linux also have a CLI. Local SQLite initially. Offline CSV/OCI JSON imports precede live synchronization. Future team/device coordination requires a central authority.
@@ -27,7 +29,7 @@ Toolchain: macOS 26.7.1 on Apple Silicon, Xcode 27.0 (27A266a) selected through 
 - Nonmutating format checks passed for all three pure Dart packages.
 - `scripts/build_macos.sh` produced a 43.9 MB universal release app (`x86_64` and `arm64`). `scripts/build_cli.sh` produced a 6.1 MB native `arm64` executable.
 - Flutter migrated the Xcode project and scheme to Swift Package Manager and generated its Swift plugin registrant. All current plugins use Swift Package Manager, so the unused Podfile was removed; generated metadata and backups are ignored.
-- Local native and GUI reviews found no actionable issues. CodeRabbit CLI was unavailable, so no CodeRabbit analysis was run.
+- Local native and GUI reviews found no actionable issues.
 
 Earlier Linux checks established portable package behavior and a native Linux CLI build. The local results above now establish macOS build and runtime behavior.
 
@@ -43,10 +45,6 @@ No OCI credentials were read and no live OCI access occurred during this validat
 
 ## Requested next action
 
-Add read-only OCI CLI integration using an existing local profile, with region and compartment selection. The proposed design is in `docs/superpowers/specs/2026-10-15-oci-cli-live-import-design.md`; an independent builder check found no important unanswered questions. It awaits user approval before implementation. Collection commands and fields were checked against official Oracle documentation and installed OCI CLI 3.94.1. Preserve import preview, atomic apply, planning fields, routing-domain scope, and incomplete-discovery warnings.
+Implement the approved read-only OCI CLI integration using an existing local profile, with region and compartment selection. The approved design is in `docs/superpowers/specs/2026-10-15-oci-cli-live-import-design.md`; it is not yet implemented in this checkout. Collection commands and fields were checked against official Oracle documentation and installed OCI CLI 3.94.1. Preserve import preview, atomic apply, planning fields, routing-domain scope, and incomplete-discovery warnings. Complete the remaining native file-dialog checks as part of desktop verification.
 
-Publish the source to a private GitHub repository named `cidr-atlas`. The GitHub connector confirms account `sergio-farfan` with `sergio.farfan@gmail.com`. The host GitHub CLI token is invalid; its browser reauthentication is pending. Repository creation and publication have not occurred. Local commit author/committer metadata is Sergio Farfan with the requested Gmail address.
-
-Continuation prompt:
-
-> Read AGENTS.md, PROJECT.md, docs/CONTRACT.md, and docs/architecture.md. Continue the Flutter/Dart/SQLite implementation. Confirm the default inventory is empty, finish the remaining native file-dialog checks, and design the requested read-only OCI CLI workflow using official documentation and the installed CLI. Verify GitHub account ownership and private repository publication before recording a remote URL. Keep credentials, customer inventories, generated builds, and machine-specific SDK paths out of Git.
+The private source repository is [sergio-farfan/cidr-atlas](https://github.com/sergio-farfan/cidr-atlas). Repository access and visibility have been verified. Keep credentials, customer inventories, generated builds, and machine-specific SDK paths out of Git.

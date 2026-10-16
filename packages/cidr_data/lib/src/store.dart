@@ -1,3 +1,7 @@
+// CIDR Atlas
+// SQLite inventory persistence and atomic imports.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';

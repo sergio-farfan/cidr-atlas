@@ -1,10 +1,16 @@
-# CIDR Atlas — Codex project instructions
+# CIDR Atlas — project instructions
+
+Author: Sergio Farfan <sergio.farfan@gmail.com>
+
+## Authorship
+
+Sergio Farfan is the sole author of project-owned code and documentation. Use professional file headers identifying CIDR Atlas, the file's purpose, and `Author: Sergio Farfan <sergio.farfan@gmail.com>`. Preserve shebangs, required language directives, licenses, and third-party attribution. Do not add assistant authorship, co-author credits, generation notices, or internal workflow activity to source files or product documentation. Generated files retain their required tool and vendor notices.
 
 ## Product and user intent
 
 Build a local-first CIDR inventory and allocation tool for an enterprise OCI infrastructure architect. Deliver macOS first, then iOS, then Windows and Linux. Desktop platforms also need a CLI. The agreed architecture is Flutter UI, a pure Dart domain engine, and SQLite; do not switch to a website, Python service, or Swift-only implementation without discussing the tradeoff.
 
-Read `docs/CONTRACT.md`, `docs/architecture.md`, and `PROJECT.md` for contracts, scope, and current handoff status.
+Read `docs/CONTRACT.md`, `docs/architecture.md`, and `PROJECT.md` for contracts, scope, and current implementation status.
 
 ## Layout
 

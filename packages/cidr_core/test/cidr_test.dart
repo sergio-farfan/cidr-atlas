@@ -1,3 +1,7 @@
+// CIDR Atlas
+// CIDR parsing and arithmetic boundary tests.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 import 'package:cidr_core/cidr_core.dart';
 import 'package:test/test.dart';
 

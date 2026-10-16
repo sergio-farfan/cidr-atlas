@@ -1,3 +1,7 @@
+// CIDR Atlas
+// Import normalization and validation tests.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 import 'dart:convert';
 
 import 'package:cidr_core/cidr_core.dart';

@@ -1,3 +1,7 @@
+// CIDR Atlas
+// Hierarchy, routing domain, and allocation tests.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 import 'package:cidr_core/cidr_core.dart';
 import 'package:test/test.dart';
 

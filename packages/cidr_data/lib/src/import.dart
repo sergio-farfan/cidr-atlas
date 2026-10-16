@@ -1,3 +1,7 @@
+// CIDR Atlas
+// Inventory import validation and export codecs.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 import 'dart:convert';
 
 import 'package:cidr_core/cidr_core.dart';

@@ -1,19 +1,19 @@
-# OCI CLI live inventory import
+# CIDR Atlas — OCI CLI live inventory import
 
 Date: 2026-10-15
-Author: Sergio Farfan
-Status: Proposed for approval
+Author: Sergio Farfan <sergio.farfan@gmail.com>
+Status: Approved for implementation; not yet implemented in the main checkout
 
 ## Intent and agreed decisions
 
 Retrieve live OCI network inventory into CIDR Atlas without requiring manual JSON
 exports. The user selected an existing OCI CLI profile, with region and
 compartment selection. Keep the existing Flutter UI, pure Dart engine, and local
-SQLite architecture. The source will live in the private GitHub repository
-`sergio-farfan/cidr-atlas`, subject to successful account authentication and
-repository creation. No inventory or credentials belong in that repository.
+SQLite architecture. The source is maintained in the verified private GitHub
+repository [sergio-farfan/cidr-atlas](https://github.com/sergio-farfan/cidr-atlas).
+No inventory or credentials belong in that repository.
 
-## Proposed first-version scope
+## Approved first-version scope
 
 Collect VCNs and subnets for one explicitly selected region and compartment per
 run. The compartment picker shows accessible compartments and the tenancy root;
@@ -23,9 +23,8 @@ The workflow reads OCI and writes only the local inventory after an explicit
 Apply action. It makes no OCI changes, schedules no background scans, and creates
 no new credentials or browser authentication sessions.
 
-These scope and interface choices are proposed implementation defaults; the user
-has approved the profile, region/compartment selection, and private repository
-name, but has not yet approved this complete design.
+The profile, region/compartment selection, repository, and complete design are
+approved. The following sections define the implementation requirements.
 
 ## Desktop workflow
 
@@ -68,8 +67,8 @@ Neither shared package imports Flutter.
 Each subprocess uses an executable plus an argument list with `runInShell: false`.
 Consume both output streams. The adapter exposes an injectable process runner and
 clock for deterministic tests. Give each request a bounded timeout and the whole
-collection an overall timeout; exact durations and progress wording are left to
-the builder. Cancellation/timeout terminates the current child, drains streams,
+collection an overall timeout; exact durations and progress wording remain
+implementation choices. Cancellation/timeout terminates the current child, drains streams,
 and produces no applicable result. No raw stdout, credential-bearing environment,
 or verbose/debug CLI output is logged.
 

@@ -1,3 +1,7 @@
+// CIDR Atlas
+// Command parsing and inventory workflows.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 library;
 
 import 'dart:convert';

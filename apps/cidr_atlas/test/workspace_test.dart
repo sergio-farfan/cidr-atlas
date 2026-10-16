@@ -1,3 +1,7 @@
+// CIDR Atlas
+// Desktop workspace and dialog widget tests.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 import 'package:cidr_atlas/app.dart';
 import 'package:cidr_atlas/controller.dart';
 import 'package:cidr_data/cidr_data.dart';

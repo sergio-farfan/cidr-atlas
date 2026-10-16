@@ -1,3 +1,7 @@
+// CIDR Atlas
+// Exact IPv4 and IPv6 network arithmetic.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 /// An immutable, canonical IPv4 or IPv6 network.
 ///
 /// Parsing is deliberately strict: host bits are rejected so a reservation

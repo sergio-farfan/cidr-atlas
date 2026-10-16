@@ -1,5 +1,7 @@
 # CIDR Atlas
 
+Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 A local, macOS-first register for OCI VCN and subnet CIDRs. Track allocations and
 reservations, import discovered networks, and review conflicts within explicit
 routing domains. The Flutter app and `cidrctl` CLI use the same pure Dart network
@@ -10,13 +12,13 @@ locally on Apple Silicon; see `PROJECT.md` for verification results and remainin
 native UI checks. Distribution signing, notarization, and installer creation are
 separate release work.
 
-## Open as a Codex project
+## Development workspace
 
-Place this folder at `~/projects/cidr-atlas` on your Mac, then open that folder as
-a local project in Codex. Keep `AGENTS.md`, `PROJECT.md`, and the Git repository
-at the project root. They preserve the architecture, implementation rules, and
-next steps for subsequent Codex sessions. Read `PROJECT.md` for a ready-to-use
-continuation prompt and current verification notes.
+Clone the private [source repository](https://github.com/sergio-farfan/cidr-atlas)
+to `~/projects/cidr-atlas` on your Mac and open the folder in your development
+environment. `AGENTS.md` defines project conventions, `PROJECT.md` records
+implementation status and verification, and `docs/` contains the architecture
+and API contracts.
 
 ## Start on your Mac
 

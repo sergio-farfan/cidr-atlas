@@ -1,4 +1,6 @@
-# Architecture
+# CIDR Atlas architecture
+
+Author: Sergio Farfan <sergio.farfan@gmail.com>
 
 CIDR Atlas starts as a macOS application with local storage. The CLI is a second
 client of the same core and persistence packages. Neither client needs a web

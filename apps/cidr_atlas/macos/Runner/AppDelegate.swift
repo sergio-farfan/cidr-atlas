@@ -1,3 +1,7 @@
+// CIDR Atlas
+// macOS application lifecycle integration.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 import Cocoa
 import FlutterMacOS
 

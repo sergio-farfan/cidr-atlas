@@ -1,3 +1,7 @@
+// CIDR Atlas
+// Inventory state and application operations.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 import 'package:cidr_core/cidr_core.dart';
 import 'package:cidr_data/cidr_data.dart';
 import 'package:flutter/foundation.dart';

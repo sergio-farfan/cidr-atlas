@@ -1,9 +1,15 @@
+// CIDR Atlas inventory editing, validation, import, and export dialogs.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 import 'dart:convert';
 
 import 'package:cidr_core/cidr_core.dart';
 import 'package:cidr_data/cidr_data.dart';
+import 'package:cidr_oci/cidr_oci.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+
+import 'oci_dialog.dart';
 
 String atlasLabel(String value) =>
     value.isEmpty ? value : '${value[0].toUpperCase()}${value.substring(1)}';
@@ -525,10 +531,12 @@ class ImportDialog extends StatefulWidget {
     required this.existing,
     this.domain,
     this.proposedRecords,
+    this.ociClient,
   });
   final List<PrefixRecord> existing;
   final String? domain;
   final List<PrefixRecord> Function(ImportPreview)? proposedRecords;
+  final OciInventoryClient? ociClient;
   @override
   State<ImportDialog> createState() => _ImportDialogState();
 }
@@ -542,6 +550,7 @@ class _ImportDialogState extends State<ImportDialog> {
   ImportPreview? _preview;
   List<String> _combinedErrors = [];
   int _combinedConflicts = 0;
+  List<String> _ociWarnings = [];
   @override
   void initState() {
     super.initState();
@@ -576,6 +585,7 @@ class _ImportDialogState extends State<ImportDialog> {
         _filename = file.name;
         _csv = file.name.toLowerCase().endsWith('.csv');
         _fileError = null;
+        _ociWarnings = [];
       });
       _parse();
     } catch (error) {
@@ -625,6 +635,32 @@ class _ImportDialogState extends State<ImportDialog> {
     }
   }
 
+  Future<void> _discoverOci() async {
+    setState(() {
+      _preview = null;
+      _text = null;
+      _filename = null;
+      _fileError = null;
+      _ociWarnings = [];
+      _combinedErrors = [];
+      _combinedConflicts = 0;
+    });
+    final selection = await showDialog<OciImportSelection>(
+      context: context,
+      builder: (_) =>
+          OciDiscoveryDialog(client: widget.ociClient, domain: _domain.text),
+    );
+    if (!mounted || selection == null) return;
+    setState(() {
+      _text = selection.bundleJson;
+      _csv = false;
+      _filename = 'OCI CLI discovery';
+      _domain.text = selection.routingDomain;
+      _ociWarnings = selection.warnings;
+    });
+    _parse();
+  }
+
   @override
   Widget build(BuildContext context) {
     final preview = _preview;
@@ -640,7 +676,7 @@ class _ImportDialogState extends State<ImportDialog> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Preview an offline CSV, CIDR Atlas JSON backup, or OCI CLI JSON bundle before saving. Existing records absent from the file are retained.',
+                  'Preview a CSV, CIDR Atlas JSON backup, or OCI inventory before saving. Existing records absent from the import are retained.',
                   style: TextStyle(color: Color(0xff98a6bc), height: 1.5),
                 ),
                 const SizedBox(height: 20),
@@ -660,6 +696,11 @@ class _ImportDialogState extends State<ImportDialog> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 18),
+                OutlinedButton(
+                  onPressed: _discoverOci,
+                  child: const Text('Discover from OCI CLI'),
                 ),
                 const SizedBox(height: 18),
                 TextField(
@@ -696,7 +737,7 @@ class _ImportDialogState extends State<ImportDialog> {
                         error: true,
                       ),
                     ),
-                  for (final warning in preview.warnings)
+                  for (final warning in [..._ociWarnings, ...preview.warnings])
                     Padding(
                       padding: const EdgeInsets.only(top: 12),
                       child: MessagePanel(message: warning),

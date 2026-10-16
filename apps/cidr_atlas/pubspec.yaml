@@ -1,3 +1,6 @@
+# CIDR Atlas Flutter application dependencies and metadata.
+# Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 name: cidr_atlas
 description: Local-first OCI network address planning for macOS.
 publish_to: none
@@ -12,6 +15,8 @@ dependencies:
     path: ../../packages/cidr_core
   cidr_data:
     path: ../../packages/cidr_data
+  cidr_oci:
+    path: ../../packages/cidr_oci
   file_selector: ^1.0.3
   path_provider: ^2.1.5
   path: ^1.9.1

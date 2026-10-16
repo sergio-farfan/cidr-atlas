@@ -47,6 +47,13 @@ packages:
       relative: true
     source: path
     version: "0.1.0"
+  cidr_oci:
+    dependency: "direct main"
+    description:
+      path: "../../packages/cidr_oci"
+      relative: true
+    source: path
+    version: "0.1.0"
   clock:
     dependency: transitive
     description:

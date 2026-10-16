@@ -358,6 +358,28 @@ void main() {
   });
 
   group('free-space planner', () {
+    test('zero-limit legacy query validates selection without reading blockers',
+        () {
+      final parent = Cidr.parse('192.0.2.0/24');
+      expect(
+          InventoryRules.available(
+              parent: parent,
+              prefixLength: 28,
+              records: [prefix('unparsed', 'malformed')],
+              routingDomain: 'corporate',
+              limit: 0),
+          isEmpty);
+      expect(
+          () => InventoryRules.available(
+              parent: parent,
+              prefixLength: 28,
+              records: [],
+              routingDomain: 'corporate',
+              parentId: 'missing',
+              limit: 0),
+          throwsArgumentError);
+    });
+
     test('finds aligned gaps and ignores only validated selected ancestry', () {
       final results = InventoryRules.available(
         parent: Cidr.parse('10.42.0.0/24'),

@@ -18,7 +18,7 @@ Mac-first desktop application for managing OCI VCN/subnet CIDRs and planning non
 
 The first milestone and the approved OCI CLI integration are implemented in the existing Flutter UI, pure Dart domain engine, and SQLite architecture. Both the app and desktop CLI can collect VCNs and subnets using an existing OCI profile, explicit authentication, region, compartment, and routing domain. Offline CSV/JSON imports remain available. Collection is read-only in OCI; only an explicit Apply writes the local inventory.
 
-The private source repository is [sergio-farfan/cidr-atlas](https://github.com/sergio-farfan/cidr-atlas). Repository ownership and private visibility have been verified. The [v0.1.0 release page](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.1.0) is the destination for the verified universal macOS DMG and SHA-256 checksum.
+The private source repository is [sergio-farfan/cidr-atlas](https://github.com/sergio-farfan/cidr-atlas). Repository ownership and private visibility have been verified. The published [v0.1.0 macOS preview release](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.1.0) contains the verified universal DMG and SHA-256 checksum. GitHub reports both assets uploaded; the remote DMG size and SHA-256 digest match the verified local artifact. The tag identifies source commit `6af1203f1720e38c2e19d804b6516b29ddfde1b4`. All reachable commit authors and committers use Sergio Farfan with the requested Gmail address.
 
 ## OCI import behavior
 

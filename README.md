@@ -73,8 +73,9 @@ The build output is `apps/cidr_atlas/build/macos/Build/Products/Release/`.
 ## macOS releases
 
 The private repository's [v0.1.0 release page](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.1.0)
-is the destination for the universal macOS DMG and its SHA-256 checksum. Repository
-access is required to download private release assets.
+provides the verified [universal macOS DMG](https://github.com/sergio-farfan/cidr-atlas/releases/download/v0.1.0/CIDR-Atlas-0.1.0-macos-universal.dmg)
+and [SHA-256 checksum](https://github.com/sergio-farfan/cidr-atlas/releases/download/v0.1.0/CIDR-Atlas-0.1.0-macos-universal.dmg.sha256).
+Repository access is required to download private release assets.
 
 Build the disk image on a Mac with the requirements above:
 

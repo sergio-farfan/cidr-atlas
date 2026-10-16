@@ -142,6 +142,6 @@ Cancellation and collection failures throw `OciException` with safe messages; no
 - [x] Run all shared-package analyzers/tests and Flutter analyzer/widget suite; build native app/CLI. Native smoke uses fictional profiles/executables until the user chooses a real connection and scope. Do not claim live OCI/IAM success from fixtures.
 - [x] Document setup, exact compartment scope, authentication choices, CIDR aliases, preview/apply, coverage, and failure behavior with official citations. Update handoff and checks precisely.
 - [x] Build and verify a universal macOS DMG, mounted app contents/signatures, and SHA-256 checksum.
-- [ ] Publish the verified DMG and checksum in the private repository's Releases.
-- [ ] Verify private GitHub repository ownership/visibility and push the tested source under Sergio Farfan authorship. Keep credential/config files, real observations, SDK locations, and generated outputs excluded.
-- [ ] Finish with artifact/repository links, test/build evidence, actual live-verification limits, and a useful next action.
+- [x] Publish the verified DMG and checksum in the private repository's Releases. The v0.1.0 preview is published; uploaded asset sizes and SHA-256 digests were verified.
+- [x] Verify private GitHub repository ownership/visibility and push the tested source under Sergio Farfan authorship. Keep credential/config files, real observations, SDK locations, and generated outputs excluded.
+- [x] Finish with artifact/repository links, test/build evidence, actual live-verification limits, and a useful next action in README.md and PROJECT.md.

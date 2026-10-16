@@ -72,9 +72,9 @@ The build output is `apps/cidr_atlas/build/macos/Build/Products/Release/`.
 
 ## macOS releases
 
-The private repository's [v0.1.0 release page](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.1.0)
-provides the verified [universal macOS DMG](https://github.com/sergio-farfan/cidr-atlas/releases/download/v0.1.0/CIDR-Atlas-0.1.0-macos-universal.dmg)
-and [SHA-256 checksum](https://github.com/sergio-farfan/cidr-atlas/releases/download/v0.1.0/CIDR-Atlas-0.1.0-macos-universal.dmg.sha256).
+The private repository's [v0.2.0 release page](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.0)
+provides the [universal macOS DMG](https://github.com/sergio-farfan/cidr-atlas/releases/download/v0.2.0/CIDR-Atlas-0.2.0-macos-universal.dmg)
+and [SHA-256 checksum](https://github.com/sergio-farfan/cidr-atlas/releases/download/v0.2.0/CIDR-Atlas-0.2.0-macos-universal.dmg.sha256).
 Repository access is required to download private release assets.
 
 Build the disk image on a Mac with the requirements above:
@@ -89,13 +89,13 @@ contents, then writes a SHA-256 checksum. Use `--skip-build` only when packaging
 an existing release build. Output is written under `build/releases/`:
 
 ```text
-CIDR-Atlas-0.1.0-macos-universal.dmg
-CIDR-Atlas-0.1.0-macos-universal.dmg.sha256
+CIDR-Atlas-0.2.0-macos-universal.dmg
+CIDR-Atlas-0.2.0-macos-universal.dmg.sha256
 ```
 
 The image contains the app, an Applications shortcut, installation instructions,
 and third-party notices. Drag the app to Applications and eject the image. This
-initial build uses an ad hoc signature; it has no Developer ID signature or Apple
+preview build uses an ad hoc signature; it has no Developer ID signature or Apple
 notarization ticket, so macOS may require explicit approval to open it. Packaging
 does not establish notarization. Apple documents disk images in the
 [Disk Utility guide](https://support.apple.com/guide/disk-utility/create-a-disk-image-dskutl11888/mac);
@@ -119,6 +119,43 @@ The desktop workspace provides an inventory table, search and filters, prefix
 details, editing, conflict review, history, an address checker, a free-space
 planner, import preview, and JSON/CSV export. Offline imports do not require OCI
 tooling or a network connection.
+
+## Visual address planning
+
+Open **Planner**, explicitly choose a routing domain, and select an allocation or
+VCN pool. The hierarchy groups OCI VCN prefixes by resource identity and shows
+their known subnets. The address map highlights free intervals, blocked space,
+conflicts, and the selected recommendation. Zoom controls and keyboard-selectable
+alternatives support reviewing large pools. Connections and reachability are not
+inferred from CIDR containment.
+
+Choose a prefix length, or size an OCI IPv4 subnet from current/peak demand,
+an explicit growth percentage, and separate additional demand. For example,
+100 addresses, 20% growth, and four additional addresses require 124 assignable
+addresses: an OCI `/25` provides 125 after its three reserved addresses. No growth
+percentage is silently selected. Oracle recommends considering future expansion,
+connected networks, and service requirements in its
+[network sizing guidance](https://docs.oracle.com/en/solutions/oci-best-practices-networking/identify-vcn-topology-and-specifications1.html).
+
+The inspector shows mask bits, IPv4 mask, network route, exact total addresses,
+address range, possible subnet counts, and an explicitly selected containing
+supernet. OCI IPv4 subnet policy applies only to `/16` through `/30` and displays
+the provider's assignable range separately. Generic `/31` and `/32` remain valid
+mathematical prefixes. IPv6 totals and slot counts use exact integers; provider
+assignable counts are omitted because Oracle's current
+[IPv6 comparison](https://docs.oracle.com/en-us/iaas/Content/Network/Concepts/ipv6.htm)
+and [VCN overview](https://docs.oracle.com/en-us/iaas/Content/Network/Tasks/Overview_of_VCNs_and_Subnets.htm)
+differ on IPv6 reservations.
+
+Available-address totals and aligned slots are separate: a partially occupied
+slot cannot hold a new subnet even when it contains unused addresses. The app
+shows exact totals with at most 12 recommendations. Ranking prefers the smallest
+fitting free CIDR and aligned edges to preserve larger contiguous space; this is
+an allocation heuristic. Review **Reserve** before saving locally. The transaction
+rechecks the current inventory and refuses stale conflicts or duplicate IDs.
+The sizing/ranking rationale is saved in notes and retained by OCI refreshes.
+Recommendations establish availability only within the supplied inventory and
+routing domain; review coverage and unimported connected address spaces first.
 
 ## Live OCI inventory
 
@@ -150,6 +187,13 @@ collect descendants. The subnet list is not restricted to VCNs in that compartme
 These choices use the documented [VCN list](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/vcn/list.html)
 and [subnet list](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/subnet/list.html)
 scope and pagination options.
+
+A successful empty list may have no CLI output. CIDR Atlas accepts this only for
+the known list commands and shows a scope warning when both resource lists are
+empty. Check the actual resource compartment when tenancy root is empty. Genuine
+malformed responses identify the failed step and expected structure without
+displaying raw response contents. This follows the installed CLI's
+[empty-list rendering behavior](https://github.com/oracle/oci-cli/blob/v3.94.1/src/oci_cli/cli_util.py#L893-L947).
 
 For a subnet whose VCN is absent from the selected-compartment list, discovery
 fetches that VCN once by ID as relationship context. It does not enumerate that
@@ -254,6 +298,37 @@ Linux uses `$XDG_DATA_HOME/cidr_atlas/inventory.sqlite`, falling back to
 `~/.local/share/cidr_atlas/inventory.sqlite`. Windows uses
 `%APPDATA%/cidr_atlas/inventory.sqlite` for the CLI. Use explicit `--db` when
 coordinating non-macOS paths.
+
+The CLI uses the same recommendation engine. These examples use a manually
+specified, fictional boundary; add `--parent ID` when selecting an existing pool:
+
+```bash
+# Preview aligned /24 candidates and exact slot totals.
+./scripts/cidrctl --db /tmp/cidr-atlas-demo.sqlite recommend \
+  --pool 10.90.0.0/20 --routing-domain example-connected \
+  --prefix 24 --format json
+
+# Explicit demand sizing: 100 + 20% + 4 = 124 assignable addresses.
+./scripts/cidrctl --db /tmp/cidr-atlas-demo.sqlite recommend \
+  --pool 10.90.0.0/20 --routing-domain example-connected \
+  --addresses 100 --growth-percent 20 --additional 4 \
+  --basis current --policy oci_ipv4 --kind subnet
+
+# Reserve the first ranked candidate only after reviewing the same inputs.
+./scripts/cidrctl --db /tmp/cidr-atlas-demo.sqlite recommend \
+  --pool 10.90.0.0/20 --routing-domain example-connected \
+  --addresses 100 --growth-percent 20 --additional 4 \
+  --basis current --policy oci_ipv4 --kind subnet \
+  --apply --name example-subnet
+```
+
+`--prefix` and `--addresses` are mutually exclusive. Demand requires an explicit
+`--growth-percent`, including zero when no further growth is intended; label an
+already planned peak with `--basis peak`. `--additional` defaults to zero.
+`--limit` defaults to 12. JSON encodes exact address/slot integers as decimal
+strings. A preview writes no inventory or history records, though opening a new
+database path can create the file. No-fit returns 1, invalid usage 2, and a stale
+conflicting apply 3. Generic prefix planning also supports IPv6.
 
 | Exit code | Meaning |
 | --- | --- |

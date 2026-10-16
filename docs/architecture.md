@@ -79,6 +79,47 @@ unknown rather than becoming the import time. Import coverage and observation
 timestamps are evidence about observations, not a guarantee of complete tenancy
 discovery.
 
+## Address planning
+
+The pure Dart core calculates CIDR details, OCI IPv4 capacity, address demand,
+disjoint free/blocked intervals, exact aligned slot counts, and bounded
+recommendations. Both frontends call `AddressPlanner.plan`; drawing geometry
+does not determine availability. IPv6 arithmetic uses `BigInt`, and no address
+space is enumerated to calculate totals. A bounded candidate list is distinct
+from the exact total number of aligned slots.
+
+The planner and the legacy availability query share blocker and ancestry rules.
+Only the selected pool and its valid explicit ancestors are exempt. Unrelated
+containment blocks space, retired records do not, and routing domains remain
+explicit. Overlapping blockers are unioned before counting; partially occupied
+slots cannot be recommended. Recommendations prefer the smallest fitting maximal
+free CIDR, then address, with aligned edges before interior alternatives. This
+heuristic preserves useful contiguous space without claiming optimal packing.
+
+Demand uses an explicit current/peak count, growth percentage and separate fixed
+allowance. Exact ceiling arithmetic chooses the most specific eligible prefix.
+OCI IPv4 subnets use `/16..30` with three reserved addresses, as documented in
+[Oracle's addressing comparison](https://docs.oracle.com/en-us/iaas/Content/Network/Concepts/ipv6.htm).
+Generic prefixes expose raw capacity without assuming provider or link semantics.
+Oracle's differing IPv6 reservation descriptions are surfaced as a policy
+limitation rather than resolved by guessing. Service-specific demand must be
+entered by the operator; capacity alone does not validate service limits.
+
+The Flutter workspace presents inventory hierarchy, grouped OCI VCN identities,
+CIDR details, a free/blocked map, exact summaries and bounded alternatives. It
+invalidates calculations when inputs or inventory change. The reservation editor
+permits review of metadata and requires recalculation if network, routing scope,
+or hierarchy changes. `InventoryStore.reserve` rejects duplicate IDs, invalid
+structure and current conflicts atomically; the planner never offers a conflict
+override. Saved notes retain demand, policy, ranking and coverage rationale through
+backup/restore and OCI refresh. Existing imports continue to preserve discovered
+conflicts for review.
+
+This workspace shows address relationships. Observed route, gateway, DRG,
+security-filter and reachability relationships require additional typed resources
+and collection; CIDR containment does not establish connectivity. All availability
+claims are conditional on the supplied inventory and its coverage.
+
 ## Live OCI collection
 
 The desktop app's existing Import dialog offers live discovery alongside offline
@@ -118,6 +159,13 @@ compartment is identified in coverage. A denied/not-found context lookup is a
 warning, preserving the subnet's VCN ID without fabricating a parent. Required
 list failures, malformed successful responses, cancellation, or timeout return
 no applicable partial bundle. Local records remain untouched.
+
+OCI CLI 3.94.1 suppresses output for an empty list. A successful blank response
+is normalized only for the four known list operations; object lookups still
+require a valid object. An empty VCN and subnet result produces direct-compartment
+guidance. Genuine response-shape errors identify the operation and expected field
+or type without raw resource values. The behavior follows Oracle's
+[CLI renderer](https://github.com/oracle/oci-cli/blob/v3.94.1/src/oci_cli/cli_util.py#L893-L947).
 
 Each process receives an executable and argument array without a shell. Explicit
 configuration, profile, authentication, region, and JSON output plus an empty rc
@@ -168,9 +216,9 @@ Applications shortcut, installation instructions, and third-party notices. It
 checks both architectures and signature integrity, verifies and mounts the image,
 checks its contents, then writes and validates a SHA-256 checksum. Artifacts are
 generated under ignored `build/releases/` and published separately through the
-private repository's [GitHub Releases](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.1.0).
+private repository's [GitHub Releases](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.0).
 
-The initial app uses an ad hoc signature. DMG integrity and local code-signature
+The preview app uses an ad hoc signature. DMG integrity and local code-signature
 verification do not establish Developer ID signing, notarization, or Gatekeeper
 acceptance on another Mac. Signing and notarization remain separate distribution
 work. Disk-image behavior follows Apple's

@@ -56,11 +56,11 @@ CIDR Atlas
 Author: Sergio Farfan <sergio.farfan@gmail.com>
 
 Drag CIDR Atlas.app to Applications, then eject this disk image.
-The application starts with an empty local inventory.
+New installations start with an empty inventory. Upgrades retain local records.
 Offline CSV/JSON imports are available from Import. Live OCI discovery requires
 an existing OCI CLI installation and profile, plus explicit scope selection.
 
-This initial release uses an ad hoc signature. It has no Developer ID signature
+This preview release uses an ad hoc signature. It has no Developer ID signature
 or Apple notarization ticket; macOS may require explicit approval to open it.
 INSTALL
 

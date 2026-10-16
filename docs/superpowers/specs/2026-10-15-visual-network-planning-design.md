@@ -2,7 +2,7 @@
 
 Author: Sergio Farfan <sergio.farfan@gmail.com>
 Date: 2026-10-15
-Status: Approved by Sergio Farfan on 2026-10-15; implementation in progress
+Status: Approved by Sergio Farfan on 2026-10-15; implemented for v0.2.0
 
 ## Intent
 

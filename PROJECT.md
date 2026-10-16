@@ -1,81 +1,68 @@
-# CIDR Atlas
+# CIDR Atlas — implementation status
 
 Author: Sergio Farfan <sergio.farfan@gmail.com>
 
-## Agreed direction
+## Product direction
 
-Mac-first desktop application for managing OCI VCN/subnet CIDRs and planning nonconflicting address allocations. Future iOS, Windows, and Linux applications share the same Dart engine; macOS, Windows, and Linux also have a CLI. Inventory is stored in local SQLite. Offline CSV/JSON imports and explicit read-only OCI CLI discovery share preview and atomic apply. Future team/device coordination requires a central authority.
+Local-first CIDR inventory and allocation planning for an enterprise OCI architect. The macOS Flutter application, pure Dart domain engine, SQLite store, and desktop CLI share the same rules. Offline CSV/JSON imports and explicit read-only OCI CLI discovery both provide validation previews and atomic local apply. iOS, Windows, and Linux graphical releases remain future milestones; team/device synchronization requires a central authority.
 
-## First milestone
+## Current implementation
 
-- Exact IPv4/IPv6 engine and routing-domain-aware conflicts.
-- Explicit address hierarchy, multiple VCN CIDRs, allocation planning.
-- Local inventory with owner, environment, status, and audit history.
-- Desktop workspace with search, filters, record editing, checker, import preview, and export.
-- CLI and documented macOS build commands.
+The approved visual address-planning milestone is implemented for v0.2.0, alongside the existing inventory, conflict review, history, editor, address checker, imports, and exports. New installations start empty; optional demo data and examples are fictional.
 
-## Current state
+- **Visual planner:** explicit routing-domain and allocation/VCN pool selection, manual pool boundaries, allocation hierarchy, grouped OCI VCN CIDRs, known subnet relationships, unresolved context, conflict indicators, and a proportional free/blocked address map. Candidate selection, keyboard navigation, zoom, fit/reset, and responsive details support the established desktop sizes. Presentation filters do not remove allocation blockers.
+- **Shared CIDR inspector:** canonical prefix, family, prefix/host bits, IPv4 mask, exact address total and range, child-slot counts, and an explicitly selected containing supernet. The same domain calculations serve the GUI and CLI.
+- **Demand and recommendations:** choose a prefix or size an OCI IPv4 subnet from current/peak demand, an explicitly chosen growth percentage, and separate additional demand. Exact free-address and aligned-slot totals are independent of the bounded candidate list. Ranking favors the smallest fitting aligned free block and edge placements; it is an allocation heuristic. The app shows up to 12 candidates.
+- **Local reservation:** the GUI opens a reviewable editor; CLI `recommend` previews by default and requires explicit apply and a name. Both retain sizing/placement rationale in notes and reject duplicate identity or stale conflicts inside the SQLite write transaction. Changes to planning inputs or inventory invalidate GUI results. OCI refresh preserves planning metadata and never frees absent observations.
+- **CLI:** the source launcher and native executable retain existing inventory/import/export operations and expose the shared recommendation engine through text or JSON output. Exact address/slot integers are decimal strings in JSON. Preview writes no inventory or history records, although opening a new database path can create the file.
 
-The first milestone and the approved OCI CLI integration are implemented in the existing Flutter UI, pure Dart domain engine, and SQLite architecture. Both the app and desktop CLI can collect VCNs and subnets using an existing OCI profile, explicit authentication, region, compartment, and routing domain. Offline CSV/JSON imports remain available. Collection is read-only in OCI; only an explicit Apply writes the local inventory.
+Availability means **available within the supplied inventory and routing domain**. Partial coverage, unimported connected networks, and stale observations limit that conclusion. Prefix ancestry and validated OCI VCN/subnet membership are the relationships shown today. Observed routes, gateways, DRG/hybrid connections, and endpoint reachability require the later connection-collection/storage milestone.
 
-The private source repository is [sergio-farfan/cidr-atlas](https://github.com/sergio-farfan/cidr-atlas). Repository ownership and private visibility have been verified. The published [v0.1.0 macOS preview release](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.1.0) contains the verified universal DMG and SHA-256 checksum. GitHub reports both assets uploaded; the remote DMG size and SHA-256 digest match the verified local artifact. The tag identifies source commit `6af1203f1720e38c2e19d804b6516b29ddfde1b4`. All reachable commit authors and committers use Sergio Farfan with the requested Gmail address.
+OCI IPv4 subnet policy is restricted to `/16` through `/30` and subtracts the three provider-reserved addresses. Generic `/31` and `/32` remain valid arithmetic inputs. IPv6 totals and aligned slots use exact integers; a definitive OCI IPv6 assignable-host count is withheld because Oracle's current [IPv6 comparison](https://docs.oracle.com/en-us/iaas/Content/Network/Concepts/ipv6.htm) and [VCN/subnet overview](https://docs.oracle.com/en-us/iaas/Content/Network/Tasks/Overview_of_VCNs_and_Subnets.htm) differ. Growth remains an explicit planning choice, consistent with Oracle's [network sizing guidance](https://docs.oracle.com/en/solutions/oci-best-practices-networking/identify-vcn-topology-and-specifications1.html).
 
-## OCI import behavior
+## OCI discovery and diagnosed empty-list failure
 
-- `packages/cidr_oci` is a pure Dart adapter shared by the app and CLI. It returns an in-memory OCI JSON bundle and performs no database writes.
-- The app's Import dialog offers **Discover from OCI CLI** alongside CSV/JSON file selection. Opening discovery reads profile metadata; **Load scopes** and **Discover inventory** are explicit network actions. API-key/security-token choice, configuration/executable overrides, READY regions, accessible compartments plus tenancy root, and manual scope fallback are supported.
-- `cidrctl discover oci` requires `--profile`, `--region`, `--compartment-id`, and `--routing-domain`. It previews by default and writes only with `--apply`; optional `--config-file`, `--oci-bin`, and `--auth api_key|security_token` override local selection.
-- One selected compartment and region are collected per run, with all pages and no descendant resource traversal. Missing referenced VCNs are fetched once by ID as context, without collecting their other subnets. Denied/not-found context is a coverage warning; required-list failures, malformed responses, cancellation, and timeouts return no applicable partial discovery.
-- Requests have a 60-second deadline; complete collection has a 180-second deadline, followed by bounded child cleanup. Expired credentials require repair or renewal outside the app. No automatic sign-in or tooling installation is performed.
-- The existing OCI JSON source identity, merge preview, and atomic transaction preserve planning metadata, retain absent resources, and expose real conflicts. Normalization includes additional subnet IPv4 and VCN BYOIPv6 aliases. UTC start/completion times and exact coverage describe a scoped observation over time, not a tenancy-wide or transactionally consistent snapshot.
+`packages/cidr_oci` is a pure Dart adapter with no Flutter, SQLite, or inventory writes. The app and CLI use an existing OCI CLI profile, explicit authentication, region, compartment, and routing domain. Opening the app's discovery dialog reads allowlisted profile metadata; **Load scopes** and **Discover inventory** initiate network requests. API-key/security-token selection, configuration/executable overrides, READY regions, accessible compartments/root, and manual scope entry are supported. Key/token-file access remains inside the OCI CLI process.
 
-Oracle assumptions were checked against installed OCI CLI 3.94.1 and official [configuration](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdkconfig.htm), [token authentication](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/clitoken.htm), [VCN list](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/vcn/list.html), [subnet list](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/subnet/list.html), and [VCN get](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/vcn/get.html) documentation. The approved design in `docs/superpowers/specs/2026-10-15-oci-cli-live-import-design.md` records the complete command and data contract.
+Each discovery collects all VCN and subnet pages directly in one selected compartment and region. It does not traverse descendants. Missing referenced VCNs are fetched once by ID as relationship context without collecting their other subnets. Missing/denied context is a visible coverage warning. Required-list failures, malformed responses, cancellation, and timeouts prevent an applicable partial discovery. Per-request and complete-collection deadlines are 60 and 180 seconds, followed by bounded child cleanup. Offline imports remain available without OCI tooling or network access.
 
-## Local validation
+An explicitly authorized, scoped read-only live check reproduced the v0.1.0 failure: the VCN list succeeded with blank stdout, which the adapter incorrectly treated as malformed JSON. The adapter now accepts successful empty stdout only for its known list commands; empty object-get output remains invalid. Malformed-response diagnostics name the operation and expected structure without exposing raw response contents. Repeating the same selected scope after the fix returned zero VCNs and zero subnets, with a direct-compartment/child-compartment warning. This result does not describe descendant compartments or establish resource deletion.
 
-Toolchain: macOS 26.7.1 on Apple Silicon, Xcode 27.0 (27A266a) selected through the session's `DEVELOPER_DIR`, Flutter 3.47.7 (`abaf9c5237`), and Dart 3.13.5. The SDK is installed outside the repository. Dependency lockfiles are committed, including the new local adapter dependencies.
+Actual allowlisted configuration metadata was read and live OCI requests occurred during that authorized check. It performed no OCI writes or local inventory writes. Automated tests and controlled executable smoke checks used fictional data. Profile names, tenancy/resource identifiers, and live output are excluded from project artifacts.
 
-- Core: 31 tests passed; analyzer clean.
-- Data/imports: 47 tests passed; analyzer clean, including CIDR alias normalization and OCI refresh preservation.
-- CLI: 29 tests passed; analyzer clean. Existing CSV/JSON workflows and new discovery preview/apply, cancellation, failed collection, metadata preservation, domain isolation, absent resources, and visible conflicts were covered.
-- Flutter: 22 widget tests passed; analyzer clean. Thirteen OCI workflow tests join nine workspace tests, covering 1100×740 and 1440×900 layouts, explicit selection, lifecycle/cancellation, manual scope fallback, and existing preview/apply integrity.
-- OCI adapter: 55 tests passed; analyzer and formatting clean. Tests cover profile handling, command scope/environment, context, failures, deadlines, and controlled subprocess lifecycle.
-- All maintained Dart source and tests passed nonmutating format checks. Two pre-existing app files were canonically formatted.
-- The integrated `scripts/build_macos.sh` build produced a 44.3 MB universal release app (`x86_64` and `arm64`). `scripts/build_cli.sh` produced a 6,652,016-byte native `arm64` executable.
-- Flutter migrated the Xcode project and scheme to Swift Package Manager and generated its Swift plugin registrant. All current plugins use Swift Package Manager, so the unused Podfile was removed; generated metadata and backups are ignored.
-- The final compiled discovery CLI passed controlled fictional-executable smoke checks: preview with no inventory/history writes, explicit apply, failed second resource list preserving existing state, and actual SIGINT terminating the child without creating a database.
-- Scoped reviews and the final integrated review passed after resolving profile-parser compatibility, expired-session diagnostics, and commit-email metadata.
+Scope and pagination were checked against installed OCI CLI 3.94.1 and Oracle's [VCN list](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/vcn/list.html), [subnet list](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/subnet/list.html), and [VCN get](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/vcn/get.html) references. The blank-output behavior matches the [Oracle CLI 3.94.1 implementation](https://github.com/oracle/oci-cli/blob/v3.94.1/src/oci_cli/cli_util.py#L893-L947). Profile/authentication conventions follow Oracle's [configuration](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdkconfig.htm) and [token authentication](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/clitoken.htm) documentation.
 
-Earlier Linux checks established portable baseline package behavior and a native Linux CLI build. They do not establish the new collector's Windows/Linux process behavior or graphical release packaging.
+## Verification
 
-## Native smoke checks and remaining limits
+Toolchain: macOS 26.7.1 on Apple Silicon, Xcode 27.0 (27A266a), Flutter 3.47.7 (`abaf9c5237`), Dart 3.13.5, and OCI CLI 3.94.1. Machine-specific SDK paths remain outside source. Current native plugins use Swift Package Manager.
 
-Before OCI integration, the release app launched with an empty inventory and rendered at both 1440px and 1100px widths. The wide layout uses the details pane; the narrow layout opens a details dialog. A native CSV file dialog loaded six fictional prefixes into a preview without writing them. Applying the preview made the same six records visible through the CLI's default database. A native JSON save produced an exact six-record export, and quitting and reopening the app preserved all six records.
+| Area | Verified result |
+| --- | --- |
+| Core | 50 tests passed; analyzer and formatting clean |
+| Data/imports | 50 tests passed; analyzer clean, including persisted rationale, OCI refresh retention, and transaction-time stale-reservation rejection |
+| OCI adapter | 63 tests passed; analyzer clean, including successful empty lists and safe malformed-response diagnostics |
+| CLI | 44 tests passed; analyzer and formatting clean; 15 recommendation cases extend existing inventory/import/discovery coverage |
+| Flutter | All 45 integrated widget tests passed; analyzer clean, including protected recommendation identity and imported OCI subnet capacity |
+| Native macOS | Release app build succeeded at 44.7 MB with `arm64` and `x86_64`; standalone CLI compiled for `arm64` |
 
-The app and CLI share `~/Library/Application Support/cidr_atlas/inventory.sqlite`. After checking that the smoke database contained exactly the six fictional records, it was moved to a temporary backup outside the repository. The app was reopened and the CLI confirmed that the default inventory is empty again.
+Core coverage includes IPv4 `/0`, `/31`, `/32`, IPv6 `/0` and `/128`, exact large integers, domain reuse, explicit hierarchy, nested/overlapping interval unions, partially occupied aligned slots, fragmentation, no-fit, growth rounding, and deterministic bounded recommendations. The demand example of 100 addresses plus 20% growth plus four additional addresses requires 124 assignable addresses and selects an OCI `/25` with 125 assignable addresses.
 
-The integrated release app launched successfully with an empty inventory. Its native Import dialog exposes both file selection and OCI discovery. Native file selection previewed six fictional CSV records and four fictional OCI JSON records with coverage and observation-time warnings. Cancelling the previews and cancelling file selection left the inventory empty. The new OCI discovery modal has widget coverage; native live selection/collection remains unverified. Native CSV save and a new native OCI JSON apply cycle remain additional checks; the baseline CSV apply/JSON export/persistence checks above remain the evidence for those existing shared paths. The local app has App Sandbox disabled to share the CLI database path. Signing is ad hoc; no Developer ID signing or notarization has been performed. App Store sandboxing and distribution hardening remain separate work.
+The compiled CLI passed fictional temporary-database checks for preview without record/history writes, explicit reservation, saved rationale, reopen/export, occupied-candidate rejection, no-fit, and invalid inputs. Existing controlled discovery checks cover preview/apply, failed collection preserving state, and SIGINT child cancellation. Shared data tests verify the two-connection stale-candidate case. Widget coverage includes explicit scope, hierarchy, conflict/coverage indicators, keyboard selection, stable zoom, input/inventory invalidation, inspector output, and 1100×740 / 1440×900 layouts.
 
-Automated and controlled native discovery checks used fictional profiles, executables, and inventories. No actual OCI configuration or credential files were read, and no live OCI access occurred. Live profile validity, IAM permissions, and tenancy resource responses remain unverified. iOS, Windows, and Linux GUI releases remain future milestones.
+All 252 package/widget tests passed. Nonmutating formatting checked 44 maintained Dart files with zero changes. Independent scoped reviews and the final integrated review found no remaining blockers after correcting recommendation resource-identity protection and consistent OCI capacity in the planner inspector.
 
-## Release packaging
+Earlier native checks established fictional CSV preview/apply, shared app/CLI persistence, JSON export, and empty-state restoration. The v0.2.0 release app launched with an empty inventory. A fictional manual `/8` preview rendered the address map, bounded candidates, CIDR details, and exactly 65,536 available `/24` slots; the CLI confirmed zero local records and no history afterward. Current reservation/editor, responsive layouts and imported OCI capacity have widget coverage; a new native reservation/apply cycle and broader native file-dialog checks remain additional verification. Earlier Linux checks establish baseline portable package behavior and a Linux CLI build; they do not establish current Windows/Linux collector behavior or graphical packaging.
 
-`scripts/build_dmg.sh` builds the macOS release app and creates `build/releases/CIDR-Atlas-0.1.0-macos-universal.dmg` with its `.sha256` file. It verifies universal architectures and code-signature integrity before packaging, verifies and mounts the image, checks the app, Applications shortcut, installation instructions, and third-party notices, then detaches it and validates the checksum. `--skip-build` packages an existing release build. Generated artifacts remain outside Git and are uploaded to GitHub Releases separately.
+## Release status
 
-The initial DMG passed these checks on this Mac, including successful read-only mounting, both architecture checks and deep/strict signature verification on the mounted app, complete expected contents, successful detach, and SHA-256 verification. The image is 20,812,287 bytes. SHA-256: `d3b9f6b7d93e83cd3e43676cbd034c0166b26b589995056fc1021a0db3ca00c0`.
+The private [source repository](https://github.com/sergio-farfan/cidr-atlas) and published [v0.1.0 preview](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.1.0) remain available. The v0.1.0 universal DMG and checksum are unchanged; that release does not contain the visual planner or empty-list fix. Publication of the approved [v0.2.0 release](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.0) is pending.
 
-The initial release retains the ad hoc signature and has no Developer ID signature or notarization ticket. A mountable DMG and a verified local signature do not establish Gatekeeper acceptance on another Mac. Apple documents disk-image contents and formats in the [Disk Utility guide](https://support.apple.com/guide/disk-utility/create-a-disk-image-dskutl11888/mac); installed Apple command help is the source for packaging flags.
+`scripts/build_dmg.sh` packages the universal application with an Applications shortcut, installation instructions, and third-party notices under `build/releases/`. The final v0.2.0 app was built from a clean Flutter/Xcode output after an incremental build left a stale outer signature. The clean build and DMG passed deep/strict signature checks, both architecture checks, image verification, read-only mounting, mounted-app checks, expected-content inspection, detach, and checksum validation. The final image is 20,959,049 bytes; SHA-256 is `ecf43fd4011849d5c4f960d288bc0838954e19c7ca264e614c948f2de827d39b`. Uploaded-asset confirmation is pending. The standalone CLI is built separately.
 
-## Requested next action
+Signing is ad hoc. No Developer ID signature or Apple notarization ticket exists, and local verification does not establish Gatekeeper acceptance on another Mac. The app currently has App Sandbox disabled to share the local database with the CLI. Apple documents disk-image packaging in the [Disk Utility guide](https://support.apple.com/guide/disk-utility/create-a-disk-image-dskutl11888/mac); installed Apple command help defines the script's flags.
 
-The proposed next feature is a visual Address Space workspace, shared CIDR
-inspector, and explainable right-sized CIDR recommendations. The design in
-`docs/superpowers/specs/2026-10-15-visual-network-planning-design.md` incorporates
-the requested calculator details, open-slot highlighting, community research,
-and Oracle planning guidance. Its first milestone uses existing inventory;
-observed topology connections are a subsequent milestone. The proposal has
-passed a builder check and remains subject to scope review before implementation.
+## Next actions
 
-The next operational check is an explicitly selected existing OCI profile, region, compartment, and routing domain against live OCI, keeping any observed inventory outside the repository. Complete remaining native file-dialog checks and plan Developer ID signing/notarization before wider macOS distribution.
+Complete private v0.2.0 asset publication. For useful live inventory, explicitly select the compartment that actually contains the intended resources and review discovery coverage before any local Apply. Subsequent product work is the separately scoped observed-connections collector/storage contract; wider macOS distribution also requires Developer ID signing and notarization. Additional native reservation and file-dialog checks can extend the current automated and baseline verification.
 
-Keep credentials, customer inventories, generated builds, and machine-specific SDK paths out of Git.
+Keep credentials, customer inventories, generated builds, databases, and machine-specific SDK paths out of Git.

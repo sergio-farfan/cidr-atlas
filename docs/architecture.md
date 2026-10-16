@@ -225,7 +225,7 @@ Applications shortcut, installation instructions, and third-party notices. It
 checks both architectures and signature integrity, verifies and mounts the image,
 checks its contents, then writes and validates a SHA-256 checksum. Artifacts are
 generated under ignored `build/releases/` and published separately through the
-private repository's [GitHub Releases](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.0).
+private repository's [GitHub Releases](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.3.0).
 
 The preview app uses an ad hoc signature. DMG integrity and local code-signature
 verification do not establish Developer ID signing, notarization, or Gatekeeper

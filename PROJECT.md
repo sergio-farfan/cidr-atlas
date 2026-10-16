@@ -79,7 +79,7 @@ Toolchain: macOS 26.7.1 Apple Silicon, Xcode 27.0 (27A266a), Flutter 3.47.7,
 Dart 3.13.5, OCI CLI 3.94.1. Native dependencies use Swift Package Manager.
 Machine-specific SDK paths are not tracked.
 
-v0.3.0 package and widget verification completed; native packaging is pending:
+v0.3.0 verification completed:
 
 - Core: 50 tests passed; analyzer clean.
 - Data/imports: 78 tests passed; analyzer clean. New fictional multi-region tests
@@ -92,23 +92,39 @@ v0.3.0 package and widget verification completed; native packaging is pending:
   results, late required failures, cancellation and single/broad deadlines.
 - CLI: 49 tests passed; analyzer clean, including pre-connection scope validation,
   repeated/comma-separated regions, all-scope flags, help and no partial writes.
-- Flutter: 71 widget tests passed; analyzer clean, including GUI scope combinations,
+- Flutter: 72 widget tests passed; analyzer clean, including GUI scope combinations,
   busy controls, broad empty retry, copyable help and responsive planner/reservation.
 
-All 331 package/widget tests passed. The planner's 390/780/1100/1440 pixel widget
+All 332 package/widget tests passed. The planner's 390/780/1100/1440 pixel widget
 layouts retain controls and reservation access; wide views put the map above the
 fold. Current validation uses fictional runners and isolated temporary/memory
 stores; it does not collect a live tenancy or change the user's default inventory.
-Native build, packaging and independent review remain pending.
+Independent whole-change and scoped layout reviews found no actionable issues.
+The compiled CLI passed isolated fictional end-to-end checks for all four scope
+combinations, preview without record/history writes, 12-record multi-region apply,
+and a late permission failure retaining exact records/history and withholding raw
+CLI diagnostics. Native QA verified scope toggles and fictional planning; resizing
+identified and corrected the compact-desktop breakpoint. The final clean native release app built at 45.1 MB for arm64/x86_64. The final
+DMG passed both architecture checks, deep/strict code-signature integrity, image
+verification, read-only mounting, expected-content inspection, detach and checksum
+validation. The corrected native build launched with the retained local inventory. Inventory/audit fingerprints remained equal
+after launch, navigation, planning preview and scope selection; no live resource
+requests or local inventory writes were performed during native QA.
 
 ## Release status
 
-The latest published preview is [v0.2.1](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.1).
+The v0.3.0 universal DMG is verified and prepared for private publication. It is
+21,157,660 bytes; SHA-256 is
+`91090df278ce252f05db2119464fb4efac20eb5d23a590463ed433458b078cc7`.
+The checksum-file SHA-256 is
+`0fc42df546b22afdb49c4c56065cbda91ca36763ff6433f3a37f0e567be0ef5a`.
+
+The prior published preview is [v0.2.1](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.1).
 Its universal DMG is 21,024,500 bytes, SHA-256
 `bf8818d8364ad3cfffd5b8de44cc1b726b99b195a3e339c4f4a1615d2df8ece8`.
 The [v0.2.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.0)
 and [v0.1.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.1.0)
-assets are preserved. v0.3.0 will be published after verification of its own build.
+assets are preserved.
 
 `scripts/build_macos.sh`, `build_cli.sh` and `build_dmg.sh` build the universal app,
 current-platform CLI and verified DMG. Packaging checks both architectures,
@@ -119,7 +135,7 @@ App Sandbox disabled for local CLI process access and shared app/CLI storage.
 
 ## Next actions
 
-Finish v0.3.0 verification and publish the private universal DMG/checksum. Then
-scope the observed connectivity collector and topology model. Wider distribution
+Publish the verified v0.3.0 private universal DMG/checksum, then scope the observed
+connectivity collector and topology model. Wider distribution
 requires Developer ID signing and notarization. Keep customer data, credentials,
 databases, generated builds and machine-specific SDK paths out of Git.

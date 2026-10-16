@@ -44,6 +44,9 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
   int _scopeRevision = 0;
   bool _loadingProfiles = true;
   bool _manual = false;
+  bool _allRegions = false;
+  bool _allCompartments = false;
+  final _additionalRegions = <String>{};
   String? _error;
   String? _progress;
 
@@ -90,6 +93,9 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
     _scopeRevision++;
     _regions = [];
     _compartments = [];
+    _additionalRegions.clear();
+    _allRegions = false;
+    _allCompartments = false;
     _region.text = _profile?.region ?? '';
     _compartment.clear();
     _error = null;
@@ -176,6 +182,7 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
       setState(() {
         _scopeRevision++;
         _regions = regions;
+        _additionalRegions.clear();
         _region.text = selected?.name ?? '';
         _compartments = [
           OciCompartment(id: connection.tenancyId, name: 'Tenancy root'),
@@ -192,7 +199,7 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
 
   Future<void> _discover() async {
     if (!_form.currentState!.validate()) return;
-    final region = _region.text.trim();
+    final regions = _allRegions ? <String>[] : _selectedRegions;
     final compartment = _compartment.text.trim();
     final domain = _domain.text.trim();
     final cancellation = _start('Starting OCI inventory discovery');
@@ -201,8 +208,10 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
       if (!_current(cancellation)) return;
       final discovery = await _client.discover(
         connection,
-        region: region,
-        compartmentId: compartment,
+        regions: regions,
+        allRegions: _allRegions,
+        compartmentId: _allCompartments ? null : compartment,
+        allCompartments: _allCompartments,
         cancellation: cancellation,
         onProgress: (message) {
           if (_current(cancellation)) setState(() => _progress = message);
@@ -224,6 +233,39 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
     }
   }
 
+  List<String> get _selectedRegions => {
+    ..._region.text.split(',').map((value) => value.trim()),
+    if (!_manual) ..._additionalRegions,
+  }.toList();
+
+  String? _regionValidation(String? value) {
+    if (_allRegions) return null;
+    if (value == null || value.trim().isEmpty) return 'Region is required';
+    if (value.split(',').any((region) => region.trim().isEmpty)) {
+      return 'Enter region names separated by commas; remove blank entries.';
+    }
+    return null;
+  }
+
+  void _toggleManual() {
+    if (!_manual) {
+      _region.text = _selectedRegions.join(', ');
+    } else {
+      final selected = _selectedRegions;
+      final ready = _regions
+          .where((region) => region.status == 'READY')
+          .map((region) => region.name)
+          .toSet();
+      final available = selected.where(ready.contains).toList();
+      _region.text = available.firstOrNull ?? '';
+      _additionalRegions
+        ..clear()
+        ..addAll(available.skip(1));
+    }
+    _scopeRevision++;
+    _manual = !_manual;
+  }
+
   String? _required(String? value, String label) =>
       value == null || value.trim().isEmpty ? '$label is required' : null;
 
@@ -237,13 +279,21 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
     enabled: !_busy,
     decoration: InputDecoration(
       labelText: label,
-      hintText: key == 'oci-domain' ? 'e.g. corporate-connected' : null,
+      hintText: key == 'oci-domain'
+          ? 'e.g. corporate-connected'
+          : key == 'oci-region'
+          ? 'us-phoenix-1, eu-frankfurt-1'
+          : null,
       helperText: key == 'oci-domain'
           ? 'Local overlap-check scope. Use the same name for connected networks.'
+          : key == 'oci-region'
+          ? 'Enter one or more resource regions, separated by commas.'
           : null,
       helperMaxLines: 3,
     ),
-    validator: (value) => _required(value, label),
+    validator: (value) => key == 'oci-region'
+        ? _regionValidation(value)
+        : _required(value, label),
   );
 
   @override
@@ -265,7 +315,7 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Read VCNs and subnets in one region and compartment. OCI supplies their network CIDRs; you do not enter a prefix here. Selecting a parent compartment does not include descendants. Review the results before saving locally.',
+                    'Read VCNs and subnets across selected regions or all READY regions, in one compartment or all accessible compartments and subcompartments. OCI supplies the network CIDRs; no manual prefix is required. Review one combined preview before saving locally.',
                   ),
                   const SizedBox(height: 18),
                   DropdownButtonFormField<String>(
@@ -369,9 +419,7 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
                         child: const Text('Load scopes'),
                       ),
                       TextButton(
-                        onPressed: _busy
-                            ? null
-                            : () => setState(() => _manual = !_manual),
+                        onPressed: _busy ? null : () => setState(_toggleManual),
                         child: Text(
                           _manual
                               ? 'Use scope selectors'
@@ -381,78 +429,159 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
                     ],
                   ),
                   const SizedBox(height: 18),
-                  if (_manual) ...[
-                    const Text(
-                      'Use this when IAM prevents listing scopes. OCI resource access is still checked during discovery.',
+                  CheckboxListTile(
+                    key: const ValueKey('oci-all-regions'),
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('All READY subscribed regions'),
+                    subtitle: const Text(
+                      'Refresh region subscriptions during discovery.',
                     ),
-                    const SizedBox(height: 14),
-                    _textField(_region, 'Region', 'oci-region'),
-                    const SizedBox(height: 18),
-                    _textField(
-                      _compartment,
-                      'Compartment OCID',
-                      'oci-compartment',
-                    ),
-                  ] else ...[
-                    DropdownButtonFormField<String>(
-                      key: ValueKey('oci-region-selector-$_scopeRevision'),
-                      initialValue:
-                          _regions.any(
-                            (region) =>
-                                region.name == _region.text &&
-                                region.status == 'READY',
-                          )
-                          ? _region.text
-                          : null,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Region (READY only)',
+                    value: _allRegions,
+                    onChanged: _busy
+                        ? null
+                        : (value) => setState(() => _allRegions = value!),
+                  ),
+                  if (!_allRegions) ...[
+                    if (_manual) ...[
+                      const Text(
+                        'Enter explicit scopes when IAM prevents listing selectors. Resource IAM permissions still apply.',
                       ),
-                      items: [
-                        for (final region in _regions)
-                          DropdownMenuItem(
-                            value: region.name,
-                            enabled: region.status == 'READY',
-                            child: Text(
-                              '${region.name} · ${region.status}',
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                      ],
-                      onChanged: _busy
-                          ? null
-                          : (value) => _region.text = value ?? '',
-                      validator: (value) => _required(value, 'Region'),
-                    ),
-                    const SizedBox(height: 18),
-                    DropdownButtonFormField<String>(
-                      key: ValueKey('oci-compartment-selector-$_scopeRevision'),
-                      initialValue:
-                          _compartments.any(
-                            (compartment) =>
-                                compartment.id == _compartment.text,
-                          )
-                          ? _compartment.text
-                          : null,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Compartment',
+                      const SizedBox(height: 14),
+                      _textField(
+                        _region,
+                        'Regions (comma-separated)',
+                        'oci-region',
                       ),
-                      items: [
-                        for (final compartment in _compartments)
-                          DropdownMenuItem(
-                            value: compartment.id,
-                            child: Text(
-                              compartment.name,
-                              overflow: TextOverflow.ellipsis,
+                    ] else ...[
+                      DropdownButtonFormField<String>(
+                        key: ValueKey('oci-region-selector-$_scopeRevision'),
+                        initialValue:
+                            _regions.any(
+                              (region) =>
+                                  region.name == _region.text &&
+                                  region.status == 'READY',
+                            )
+                            ? _region.text
+                            : null,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Region (READY only)',
+                        ),
+                        items: [
+                          for (final region in _regions)
+                            DropdownMenuItem(
+                              value: region.name,
+                              enabled: region.status == 'READY',
+                              child: Text(
+                                '${region.name} · ${region.status}',
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
+                        ],
+                        onChanged: _busy
+                            ? null
+                            : (value) => setState(() {
+                                _region.text = value ?? '';
+                                _additionalRegions.remove(value);
+                              }),
+                        validator: _regionValidation,
+                      ),
+                      if (_regions
+                              .where((region) => region.status == 'READY')
+                              .length >
+                          1) ...[
+                        const SizedBox(height: 10),
+                        const Text('Include additional READY regions'),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: [
+                            for (final region in _regions.where(
+                              (region) =>
+                                  region.status == 'READY' &&
+                                  region.name != _region.text,
+                            ))
+                              FilterChip(
+                                key: ValueKey(
+                                  'oci-extra-region-${region.name}',
+                                ),
+                                label: Text(region.name),
+                                selected: _additionalRegions.contains(
+                                  region.name,
+                                ),
+                                onSelected: _busy
+                                    ? null
+                                    : (selected) => setState(() {
+                                        if (selected) {
+                                          _additionalRegions.add(region.name);
+                                        } else {
+                                          _additionalRegions.remove(
+                                            region.name,
+                                          );
+                                        }
+                                      }),
+                              ),
+                          ],
+                        ),
                       ],
-                      onChanged: _busy
-                          ? null
-                          : (value) => _compartment.text = value ?? '',
-                      validator: (value) => _required(value, 'Compartment'),
+                    ],
+                  ],
+                  const SizedBox(height: 10),
+                  CheckboxListTile(
+                    key: const ValueKey('oci-all-compartments'),
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'All accessible compartments and subcompartments',
                     ),
+                    subtitle: const Text(
+                      'Includes tenancy root and accessible active descendants. IAM-hidden compartments may remain unseen.',
+                    ),
+                    value: _allCompartments,
+                    onChanged: _busy
+                        ? null
+                        : (value) => setState(() => _allCompartments = value!),
+                  ),
+                  if (!_allCompartments) ...[
+                    if (_manual)
+                      _textField(
+                        _compartment,
+                        'Compartment OCID',
+                        'oci-compartment',
+                      )
+                    else
+                      DropdownButtonFormField<String>(
+                        key: ValueKey(
+                          'oci-compartment-selector-$_scopeRevision',
+                        ),
+                        initialValue:
+                            _compartments.any(
+                              (compartment) =>
+                                  compartment.id == _compartment.text,
+                            )
+                            ? _compartment.text
+                            : null,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Compartment',
+                          helperText: 'Direct resources only; children require the all-compartments option.',
+                          helperMaxLines: 2,
+                        ),
+                        items: [
+                          for (final compartment in _compartments)
+                            DropdownMenuItem(
+                              value: compartment.id,
+                              child: Text(
+                                compartment.name,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                        onChanged: _busy
+                            ? null
+                            : (value) => _compartment.text = value ?? '',
+                        validator: (value) => _required(value, 'Compartment'),
+                      ),
                   ],
                   const SizedBox(height: 18),
                   _textField(_domain, 'Routing domain', 'oci-domain'),

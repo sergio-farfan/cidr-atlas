@@ -246,25 +246,50 @@ class _AtlasHelpDialogState extends State<AtlasHelpDialog> {
         '1. Choose an existing OCI CLI profile and confirm its tenancy and '
         'default region. Select API key or Security token authentication to '
         'match that profile.\n\n'
-        '2. Select Load scopes. Choose a READY region and the compartment '
-        'that contains the resources. Enter scope manually is available '
-        'when enumeration is unavailable; resource IAM permissions still apply.\n\n'
+        '2. Select Load scopes. Choose a READY region, optionally add other '
+        'READY regions, or select All READY subscribed regions. Choose one '
+        'direct compartment, or use the all-compartments option below. '
+        'Enter scope manually accepts comma-separated region names when '
+        'selectors cannot be loaded; resource IAM permissions still apply.\n\n'
         '3. Enter a routing domain, then select Discover inventory. Review '
         'the preview before Apply import saves the valid batch locally.',
       ),
       _paragraph(
-        'Each run reads all VCN/subnet pages directly in one compartment and '
-        'region. Tenancy root and parent compartments do not include resources '
-        'in child compartments. Discover each intended child separately. A '
-        'referenced VCN can be included as context without collecting its '
-        'other subnets.',
+        'All accessible compartments and subcompartments includes tenancy root '
+        'and all visible active descendants. A selected compartment reads only '
+        'its direct resources. The region and compartment choices are independent: '
+        'one region/all compartments, multiple regions/one compartment, or both '
+        'broad options are supported. All pages from every chosen pair return '
+        'to one combined preview and one atomic local apply. A referenced VCN '
+        'can be included as context without collecting its other subnets.',
+      ),
+      _heading('Example scopes'),
+      _paragraph(
+        'One environment: choose eu-frankfurt-1 and a development compartment.\n\n'
+        'Regional inventory: choose eu-frankfurt-1 and enable all compartments.\n\n'
+        'Shared application: choose us-phoenix-1, add eu-frankfurt-1, and select '
+        'its compartment.\n\n'
+        'Broad inventory: enable both all-region and all-compartment options. '
+        'READY subscriptions and accessible compartments are freshly enumerated '
+        'during discovery, then each region/compartment pair is read.',
+      ),
+      _heading('Permissions and coverage'),
+      _paragraph(
+        'Accessible compartment enumeration requires IAM visibility and does '
+        'not grant permission to list VCNs or subnets. IAM-hidden compartments '
+        'may remain unseen. A failed required enumeration or network-list '
+        'request returns no applicable partial result. Read the reported '
+        'scope, collection interval, and warnings before treating gaps as '
+        'candidates for allocation.',
       ),
       _heading('If 0 prefixes are returned'),
       _paragraph(
-        'There is nothing to apply. Check the profile/tenancy, region, and '
-        'actual resource compartment. The tenancy root can be empty while '
-        'child compartments contain networks. Choose the child and discover '
-        'again. Entering a new range belongs in New prefix or Planner.',
+        'There is nothing to apply. Check the profile/tenancy, resource regions, '
+        'scope mode, and IAM permissions. With a selected direct compartment, '
+        'networks may instead be in a child: select that child or enable all '
+        'compartments. If all compartments are already included, review '
+        'permissions and region subscriptions. Entering a new range belongs '
+        'in New prefix or Planner.',
       ),
       _heading('If a request fails'),
       _paragraph(
@@ -296,6 +321,14 @@ class _AtlasHelpDialogState extends State<AtlasHelpDialog> {
       _reference(
         'Subnet list scope and pagination',
         'tools/oci-cli/latest/oci_cli_docs/cmdref/network/subnet/list.html',
+      ),
+      _reference(
+        'Compartment hierarchy and accessible scopes',
+        'tools/oci-cli/latest/oci_cli_docs/cmdref/iam/compartment/list.html',
+      ),
+      _reference(
+        'Subscribed regions',
+        'tools/oci-cli/latest/oci_cli_docs/cmdref/iam/region-subscription/list.html',
       ),
       _reference(
         'IAM permissions',
@@ -463,9 +496,19 @@ class _AtlasHelpDialogState extends State<AtlasHelpDialog> {
       ),
       _paragraph(
         'Discovery is an explicit OCI read and previews by default. '
-        'Use --auth security_token for a session profile. Each run reads '
-        'one direct compartment and region; it does not traverse child '
-        'resources. Use cidrctl --help for the available commands.',
+        'Use --auth security_token for a session profile. --region accepts '
+        'repeated options or comma-separated names. Replace --region with '
+        '--all-regions for every READY subscription. Replace --compartment-id '
+        'with --all-compartments to include root and accessible active '
+        'descendants. The two broad options can be used independently. '
+        'Required enumeration/list failures cannot apply partial inventory. '
+        'Use cidrctl discover oci --help for scope examples.',
+      ),
+      _example(
+        'CLI all-scope OCI preview',
+        'cidrctl --db fictional.sqlite discover oci --profile FICTIONAL '
+            '--all-regions --all-compartments '
+            '--routing-domain fictional-connected',
       ),
     ],
   };

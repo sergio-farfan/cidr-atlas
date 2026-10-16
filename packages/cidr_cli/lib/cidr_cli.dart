@@ -15,7 +15,7 @@ import 'package:cidr_oci/cidr_oci.dart';
 
 import 'src/recommendation.dart';
 
-const _version = '0.2.1';
+const _version = '0.3.0';
 
 /// Runs desktop commands, including asynchronous OCI discovery.
 Future<int> runCidrctlAsync(
@@ -50,14 +50,23 @@ Future<int> runCidrctlAsync(
     if (command.rest.length != 1 || command.rest.single != 'oci') {
       throw const FormatException('Discovery type must be oci.');
     }
-    for (final key in [
-      'profile',
-      'region',
-      'compartment-id',
-      'routing-domain'
-    ]) {
-      _required(command, key);
+    _required(command, 'profile');
+    _required(command, 'routing-domain');
+    final selectedRegions = _discoveryRegions(command);
+    final allRegions = command['all-regions'] as bool;
+    if (allRegions && command.wasParsed('region')) {
+      throw const FormatException('Use --region or --all-regions, not both.');
     }
+    if (!allRegions && selectedRegions.isEmpty) {
+      throw const FormatException(
+          '--region is required unless --all-regions is set.');
+    }
+    final allCompartments = command['all-compartments'] as bool;
+    if (allCompartments && command.wasParsed('compartment-id')) {
+      throw const FormatException(
+          'Use --compartment-id or --all-compartments, not both.');
+    }
+    if (!allCompartments) _required(command, 'compartment-id');
   } on FormatException catch (error) {
     errors.writeln('Usage error: ${error.message}');
     errors.writeln('Run cidrctl discover oci --help.');
@@ -85,8 +94,12 @@ Future<int> runCidrctlAsync(
     _checkCancellation(token);
     final discovery = await client.discover(
       connection,
-      region: _required(command, 'region'),
-      compartmentId: _required(command, 'compartment-id'),
+      regions: _discoveryRegions(command),
+      allRegions: command['all-regions'] as bool,
+      compartmentId: (command['all-compartments'] as bool)
+          ? null
+          : _required(command, 'compartment-id'),
+      allCompartments: command['all-compartments'] as bool,
       cancellation: token,
       onProgress: errors.writeln,
     );
@@ -371,8 +384,19 @@ ArgParser _parser() {
         help: 'Write the preview after successful validation.');
   command('discover')
     ..addOption('profile', help: 'Required OCI configuration profile.')
-    ..addOption('region', help: 'Required OCI region.')
-    ..addOption('compartment-id', help: 'Required OCI compartment OCID.')
+    ..addMultiOption('region',
+        splitCommas: false,
+        help:
+            'Selected OCI regions, repeatable or comma-separated; exclusive with --all-regions.')
+    ..addFlag('all-regions',
+        negatable: false, help: 'Collect all READY subscribed regions.')
+    ..addOption('compartment-id',
+        help:
+            'One direct OCI compartment OCID; exclusive with --all-compartments.')
+    ..addFlag('all-compartments',
+        negatable: false,
+        help:
+            'Collect tenancy root and all accessible active compartments/subcompartments.')
     ..addOption('routing-domain', help: 'Required conflict-checking scope.')
     ..addOption('config-file', help: 'OCI configuration file override.')
     ..addOption('oci-bin', help: 'OCI executable path override.')
@@ -411,11 +435,21 @@ void _usage(ArgParser parser, StringSink output, {String? command}) {
   output.writeln(switch (command) {
     'discover' =>
       '''No manual CIDR is required: OCI supplies existing VCN/subnet CIDRs.
-Choose an existing profile, resource region, direct compartment and routing domain.
-An empty result has nothing to apply; check the region and child compartment.
-Selecting tenancy root or a parent does not collect child-compartment resources.
-Example (fictional scope; preview only):
+Choose an existing profile and routing domain, then one option per scope dimension:
+  --region NAME (repeatable or comma-separated) OR --all-regions
+  --compartment-id OCID OR --all-compartments
+--all-regions freshly selects READY subscribed regions; other statuses are excluded.
+--all-compartments includes tenancy root and all accessible active descendants.
+A selected parent is direct-only: it does not collect child compartment resources.
+Examples (fictional scopes; preview only):
   cidrctl discover oci --profile EXAMPLE --region us-phoenix-1 --compartment-id ocid1.compartment.oc1..example --routing-domain fictional-connected
+  cidrctl discover oci --profile EXAMPLE --region us-phoenix-1,eu-frankfurt-1 --all-compartments --routing-domain fictional-connected
+  cidrctl discover oci --profile EXAMPLE --all-regions --compartment-id ocid1.compartment.oc1..example --routing-domain fictional-connected
+  cidrctl discover oci --profile EXAMPLE --all-regions --all-compartments --routing-domain fictional-connected
+Accessible compartment visibility does not grant network-list permission or expose IAM-hidden scopes.
+Any failed required enumeration/list returns no applicable partial inventory.
+An empty result has nothing to apply; review profile, regions, scope and IAM permissions.
+One combined preview precedes atomic apply. Absent records are retained; omissions do not prove free IPs.
 Add --apply only after reviewing the intended scope and preview.''',
     'import' =>
       '''Reads CIDRs from the file; do not enter a manual CIDR for import.
@@ -452,6 +486,21 @@ Use cidrctl <command> --help for guidance and fictional examples.
 Use --db PATH for a separate local inventory. Imports/recommendations preview by default.''',
     _ => 'Use cidrctl --help to choose a workflow.',
   });
+}
+
+List<String> _discoveryRegions(ArgResults command) {
+  final selected = <String>{};
+  for (final argument in command['region'] as List<String>) {
+    for (final value in argument.split(',')) {
+      final region = value.trim();
+      if (region.isEmpty) {
+        throw const FormatException(
+            '--region must contain nonblank region names.');
+      }
+      selected.add(region);
+    }
+  }
+  return selected.toList();
 }
 
 void _requireRest(ArgResults command, int count) {

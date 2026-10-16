@@ -4,69 +4,122 @@ Author: Sergio Farfan <sergio.farfan@gmail.com>
 
 ## Product direction
 
-Local-first CIDR inventory and allocation planning for an enterprise OCI architect. The macOS Flutter application, pure Dart domain engine, SQLite store, and desktop CLI share the same rules. Offline CSV/JSON imports and explicit read-only OCI CLI discovery both provide validation previews and atomic local apply. iOS, Windows, and Linux graphical releases remain future milestones; team/device synchronization requires a central authority.
+Local-first CIDR inventory and allocation planning for cloud/network administrators.
+The macOS Flutter app and desktop CLI share pure Dart network rules, OCI discovery,
+and a local SQLite inventory. Offline CSV/JSON imports remain available. iOS,
+Windows and Linux graphical releases and team synchronization are future work.
+New installations start empty; optional demo inventories are fictional.
 
 ## Current implementation
 
-The approved visual address-planning milestone is implemented for v0.2.0, alongside the existing inventory, conflict review, history, editor, address checker, imports, and exports. New installations start empty; optional demo data and examples are fictional.
+The v0.3.0 implementation adds one/several selected regions or all READY subscribed
+regions, independently paired with one direct compartment or all accessible active
+compartments and subcompartments, including tenancy root. It collects all resource
+pages for each region/compartment pair into one preview. Every resource retains its
+actual region and compartment; refresh preserves planning metadata and absent
+records. Accessible compartment visibility does not guarantee network-list access
+or visibility of IAM-hidden resources. Required failures stop collection without
+an applicable partial bundle. Offline imports, preview and atomic apply are retained.
 
-The v0.2.1 update adds offline **Help and examples** with seven topics, contextual import/discovery/planner entry points, copyable fictional examples, and a [user guide](docs/user-guide.md). It distinguishes automatic OCI CIDRs from manual network CIDRs, planning boundaries and requested child prefix lengths. A successful empty discovery shows a neutral completion, explains why no manual prefix is needed, keeps Apply disabled, and offers scope selection again. Invalid previews skip merged validation, so diagnostics appear once. Detailed provenance remains expandable; malformed/structural errors still block apply. CLI help includes matching workflow guidance and examples without opening a database.
+The planner uses compact planning controls beside the main address map, with an
+adjacent selected-network inspector when width permits. It shows address hierarchy,
+OCI VCN membership, conflicts, blocked/free space, exact slot totals and bounded
+recommendations. Address containment does not establish connectivity. A topology
+view needs observed routes, gateways, DRGs, peering and security resources; those
+remain a separate collection/storage milestone.
 
-- **Visual planner:** explicit routing-domain and allocation/VCN pool selection, manual pool boundaries, allocation hierarchy, grouped OCI VCN CIDRs, known subnet relationships, unresolved context, conflict indicators, and a proportional free/blocked address map. Candidate selection, keyboard navigation, zoom, fit/reset, and responsive details support the established desktop sizes. Presentation filters do not remove allocation blockers.
-- **Shared CIDR inspector:** canonical prefix, family, prefix/host bits, IPv4 mask, exact address total and range, child-slot counts, and an explicitly selected containing supernet. The same domain calculations serve the GUI and CLI.
-- **Demand and recommendations:** choose a prefix or size an OCI IPv4 subnet from current/peak demand, an explicitly chosen growth percentage, and separate additional demand. Exact free-address and aligned-slot totals are independent of the bounded candidate list. Ranking favors the smallest fitting aligned free block and edge placements; it is an allocation heuristic. The app shows up to 12 candidates.
-- **Local reservation:** the GUI opens a reviewable editor; CLI `recommend` previews by default and requires explicit apply and a name. Both retain sizing/placement rationale in notes and reject duplicate identity or stale conflicts inside the SQLite write transaction. Changes to planning inputs or inventory invalidate GUI results. OCI refresh preserves planning metadata and never frees absent observations.
-- **CLI:** the source launcher and native executable retain existing inventory/import/export operations and expose the shared recommendation engine through text or JSON output. Exact address/slot integers are decimal strings in JSON. Preview writes no inventory or history records, although opening a new database path can create the file.
+The shared CIDR inspector shows prefix/host bits, IPv4 mask, network and address
+range, exact counts, theoretical child slots and a selected containing supernet.
+OCI IPv4 subnet capacity supports /16 through /30 with three reserved addresses.
+Demand sizing requires explicit growth and separate additional demand. IPv6 uses
+exact integers without inventing an OCI assignable-host policy. Availability is
+conditional on inventory coverage and the explicit routing domain.
 
-Availability means **available within the supplied inventory and routing domain**. Partial coverage, unimported connected networks, and stale observations limit that conclusion. Prefix ancestry and validated OCI VCN/subnet membership are the relationships shown today. Observed routes, gateways, DRG/hybrid connections, and endpoint reachability require the later connection-collection/storage milestone.
+Local reservations recheck identity, structure and current conflicts in the SQLite
+write transaction. Imported conflicts remain reviewable. Refresh retains local
+owner, notes, status, parent, environment and customer fields and never deletes or
+retires omitted resources. Source observation time remains distinct from apply time.
 
-OCI IPv4 subnet policy is restricted to `/16` through `/30` and subtracts the three provider-reserved addresses. Generic `/31` and `/32` remain valid arithmetic inputs. IPv6 totals and aligned slots use exact integers; a definitive OCI IPv6 assignable-host count is withheld because Oracle's current [IPv6 comparison](https://docs.oracle.com/en-us/iaas/Content/Network/Concepts/ipv6.htm) and [VCN/subnet overview](https://docs.oracle.com/en-us/iaas/Content/Network/Tasks/Overview_of_VCNs_and_Subnets.htm) differ. Growth remains an explicit planning choice, consistent with Oracle's [network sizing guidance](https://docs.oracle.com/en/solutions/oci-best-practices-networking/identify-vcn-topology-and-specifications1.html).
+Offline Help and examples and the [user guide](docs/user-guide.md) explain scope
+selection, empty results, manual CIDRs, planning prefixes, capacity and routing
+domains with fictional copyable examples. Empty live results keep Apply disabled;
+validation errors remain visible without duplicates. Coverage is expandable.
 
-## OCI discovery and diagnosed empty-list failure
+## OCI collection contract
 
-`packages/cidr_oci` is a pure Dart adapter with no Flutter, SQLite, or inventory writes. The app and CLI use an existing OCI CLI profile, explicit authentication, region, compartment, and routing domain. Opening the app's discovery dialog reads allowlisted profile metadata; **Load scopes** and **Discover inventory** initiate network requests. API-key/security-token selection, configuration/executable overrides, READY regions, accessible compartments/root, and manual scope entry are supported. Key/token-file access remains inside the OCI CLI process.
+The shared adapter uses an existing local OCI CLI/profile; private-key and token
+access stays within the CLI. Metadata selection is explicit, as are network
+requests. There is no automatic sign-in, provisioning, background collection or
+credential creation. Requests use explicit profile/config/auth/region/JSON,
+isolated rc/environment defaults, all pages and bounded retries.
 
-Each discovery collects all VCN and subnet pages directly in one selected compartment and region. It does not traverse descendants. Missing referenced VCNs are fetched once by ID as relationship context without collecting their other subnets. Missing/denied context is a visible coverage warning. Required-list failures, malformed responses, cancellation, and timeouts prevent an applicable partial discovery. Per-request and complete-collection deadlines are 60 and 180 seconds, followed by bounded child cleanup. Offline imports remain available without OCI tooling or network access.
+Collection is sequential with progress, cancellation and safe operation/scope
+errors. Per-command deadline is 60 seconds; whole collection defaults to 180
+seconds for one selected pair and 1800 seconds for broader modes. A required
+failure returns no bundle. Denied/not-found referenced VCN context remains a
+warning; context queries use the actual region. Coverage records modes, actual
+regions/compartments, completed scopes/resource counts, observation interval and
+context outcomes. It is not a complete or transactionally consistent tenancy audit.
 
-An explicitly authorized, scoped read-only live check reproduced the v0.1.0 failure: the VCN list succeeded with blank stdout, which the adapter incorrectly treated as malformed JSON. The adapter now accepts successful empty stdout only for its known list commands; empty object-get output remains invalid. Malformed-response diagnostics name the operation and expected structure without exposing raw response contents. Repeating the same selected scope after the fix returned zero VCNs and zero subnets, with a direct-compartment/child-compartment warning. This result does not describe descendant compartments or establish resource deletion.
-
-Actual allowlisted configuration metadata was read and live OCI requests occurred during that authorized check. It performed no OCI writes or local inventory writes. Automated tests and controlled executable smoke checks used fictional data. Profile names, tenancy/resource identifiers, and live output are excluded from project artifacts.
-
-Scope and pagination were checked against installed OCI CLI 3.94.1 and Oracle's [VCN list](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/vcn/list.html), [subnet list](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/subnet/list.html), and [VCN get](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/vcn/get.html) references. The blank-output behavior matches the [Oracle CLI 3.94.1 implementation](https://github.com/oracle/oci-cli/blob/v3.94.1/src/oci_cli/cli_util.py#L893-L947). Profile/authentication conventions follow Oracle's [configuration](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdkconfig.htm) and [token authentication](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/clitoken.htm) documentation.
+Validated against installed OCI CLI 3.94.1 and Oracle's
+[compartment list](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/iam/compartment/list.html),
+[region subscriptions](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/iam/region-subscription/list.html),
+[VCN list](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/vcn/list.html),
+[subnet list](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/subnet/list.html)
+and [VCN get](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/vcn/get.html).
+Root-only subtree enumeration uses ACCESSIBLE and ACTIVE, adding root once.
+Only READY subscriptions are included in all-region mode. A successful blank CLI
+list is accepted only for known list commands, consistent with Oracle's
+[3.94.1 CLI renderer](https://github.com/oracle/oci-cli/blob/v3.94.1/src/oci_cli/cli_util.py#L893-L947);
+empty object gets remain invalid.
 
 ## Verification
 
-Toolchain: macOS 26.7.1 on Apple Silicon, Xcode 27.0 (27A266a), Flutter 3.47.7 (`abaf9c5237`), Dart 3.13.5, and OCI CLI 3.94.1. Machine-specific SDK paths remain outside source. Current native plugins use Swift Package Manager.
+Toolchain: macOS 26.7.1 Apple Silicon, Xcode 27.0 (27A266a), Flutter 3.47.7,
+Dart 3.13.5, OCI CLI 3.94.1. Native dependencies use Swift Package Manager.
+Machine-specific SDK paths are not tracked.
 
-| Area | Verified result |
-| --- | --- |
-| Core | 50 tests passed; analyzer and formatting clean |
-| Data/imports | 74 tests passed; analyzer clean, including empty-result classification without weakening validation/apply, persisted rationale, OCI refresh retention, and transaction-time stale-reservation rejection |
-| OCI adapter | 63 tests passed; analyzer clean, including successful empty lists and safe malformed-response diagnostics |
-| CLI | 45 tests passed; analyzer clean, including no-database help and prefix/import/discovery examples |
-| Flutter | All 61 integrated widget tests passed; analyzer clean, including contextual help/state retention, valid copied CSV/JSON, empty-discovery retry/apply, malformed-error deduplication and existing planning/import safeguards |
-| Native macOS | v0.2.1 clean release app built at 44.8 MB for arm64/x86_64; arm64 CLI compiled and fictional help/import examples verified |
+v0.3.0 package and widget verification completed; native packaging is pending:
 
-Core coverage includes IPv4 `/0`, `/31`, `/32`, IPv6 `/0` and `/128`, exact large integers, domain reuse, explicit hierarchy, nested/overlapping interval unions, partially occupied aligned slots, fragmentation, no-fit, growth rounding, and deterministic bounded recommendations. The demand example of 100 addresses plus 20% growth plus four additional addresses requires 124 assignable addresses and selects an OCI `/25` with 125 assignable addresses.
+- Core: 50 tests passed; analyzer clean.
+- Data/imports: 78 tests passed; analyzer clean. New fictional multi-region tests
+  verify regional identities and parents, atomic apply, repeat refresh retaining
+  local fields/absent regions, rollback for an invalid later record, and visible
+  same-domain overlap across regions.
 
-The compiled CLI passed fictional temporary-database checks for preview without record/history writes, explicit reservation, saved rationale, reopen/export, occupied-candidate rejection, no-fit, and invalid inputs. Existing controlled discovery checks cover preview/apply, failed collection preserving state, and SIGINT child cancellation. Shared data tests verify the two-connection stale-candidate case. Widget coverage includes explicit scope, hierarchy, conflict/coverage indicators, keyboard selection, stable zoom, input/inventory invalidation, inspector output, and 1100×740 / 1440×900 layouts.
+- OCI adapter: 83 tests passed; analyzer clean, including all scope combinations,
+  root/region deduplication, pagination, regional context, READY exclusions, empty
+  results, late required failures, cancellation and single/broad deadlines.
+- CLI: 49 tests passed; analyzer clean, including pre-connection scope validation,
+  repeated/comma-separated regions, all-scope flags, help and no partial writes.
+- Flutter: 71 widget tests passed; analyzer clean, including GUI scope combinations,
+  busy controls, broad empty retry, copyable help and responsive planner/reservation.
 
-The v0.2.0 baseline passed 252 package/widget tests and formatting of 44 maintained Dart files. The v0.2.1 change has passing data, CLI and app suites as listed above; the unchanged core/OCI results remain the verified baseline. Formatting checked 46 maintained Dart files with zero changes. Fresh review and correction verification passed after fixing copied CLI import flags, disabling help during active discovery, and correcting CSV header guidance. The compiled CLI verified both import preview/apply examples against a fictional temporary file and confirmed that help creates no database. Native v0.2.1 help opened with the prefix explanation and readable topic navigation; inventory/history hashes before and after launch/navigation matched exactly. No live OCI requests were needed for this update.
-
-Earlier native checks established fictional CSV preview/apply, shared app/CLI persistence, JSON export, and empty-state restoration. The v0.2.0 release app launched with an empty inventory. A fictional manual `/8` preview rendered the address map, bounded candidates, CIDR details, and exactly 65,536 available `/24` slots; the CLI confirmed zero local records and no history afterward. Current reservation/editor, responsive layouts and imported OCI capacity have widget coverage; a new native reservation/apply cycle and broader native file-dialog checks remain additional verification. Earlier Linux checks establish baseline portable package behavior and a Linux CLI build; they do not establish current Windows/Linux collector behavior or graphical packaging.
+All 331 package/widget tests passed. The planner's 390/780/1100/1440 pixel widget
+layouts retain controls and reservation access; wide views put the map above the
+fold. Current validation uses fictional runners and isolated temporary/memory
+stores; it does not collect a live tenancy or change the user's default inventory.
+Native build, packaging and independent review remain pending.
 
 ## Release status
 
-The private [v0.2.1 preview release](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.1) is published with its universal DMG and checksum file. Both uploaded asset sizes and digests match the verified local files, and repository private visibility was rechecked. Tag `v0.2.1` identifies source commit `d187c7673f0bba33a6b791d768d1e9f7852edfd7`. The DMG passed image verification, read-only mounting, expected-content inspection, both architectures, deep/strict signature integrity, detach and checksum validation. It is 21,024,500 bytes; SHA-256 is `bf8818d8364ad3cfffd5b8de44cc1b726b99b195a3e339c4f4a1615d2df8ece8`. The v0.2.0 DMG size/digest were rechecked and remain unchanged. All new commit authors and committers use Sergio Farfan with `sergio.farfan@gmail.com`.
+The latest published preview is [v0.2.1](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.1).
+Its universal DMG is 21,024,500 bytes, SHA-256
+`bf8818d8364ad3cfffd5b8de44cc1b726b99b195a3e339c4f4a1615d2df8ece8`.
+The [v0.2.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.0)
+and [v0.1.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.1.0)
+assets are preserved. v0.3.0 will be published after verification of its own build.
 
-The private [source repository](https://github.com/sergio-farfan/cidr-atlas) now includes the published [v0.2.0 preview release](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.0), with the universal DMG and SHA-256 file. GitHub reports both assets uploaded; their sizes and digests match the local artifacts. Repository private visibility was rechecked. Tag `v0.2.0` identifies source commit `7b755329d05fdfdd9c7499c2862b099b3dd380db`. All new commit authors and committers use Sergio Farfan with `sergio.farfan@gmail.com`. The [v0.1.0 preview](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.1.0) remains unchanged; its original DMG size and digest were rechecked.
-
-`scripts/build_dmg.sh` packages the universal application with an Applications shortcut, installation instructions, and third-party notices under `build/releases/`. The final v0.2.0 app was built from a clean Flutter/Xcode output after an incremental build left a stale outer signature. The clean build and DMG passed deep/strict signature checks, both architecture checks, image verification, read-only mounting, mounted-app checks, expected-content inspection, detach, and checksum validation. The final image is 20,959,049 bytes; SHA-256 is `ecf43fd4011849d5c4f960d288bc0838954e19c7ca264e614c948f2de827d39b`. GitHub's uploaded DMG and checksum-file digests and sizes match the local files. The standalone CLI is built separately.
-
-Signing is ad hoc. No Developer ID signature or Apple notarization ticket exists, and local verification does not establish Gatekeeper acceptance on another Mac. The app currently has App Sandbox disabled to share the local database with the CLI. Apple documents disk-image packaging in the [Disk Utility guide](https://support.apple.com/guide/disk-utility/create-a-disk-image-dskutl11888/mac); installed Apple command help defines the script's flags.
+`scripts/build_macos.sh`, `build_cli.sh` and `build_dmg.sh` build the universal app,
+current-platform CLI and verified DMG. Packaging checks both architectures,
+deep/strict signature integrity, read-only mounted contents and SHA-256.
+Signing is ad hoc; no Developer ID signature or notarization ticket exists. Local
+verification does not establish Gatekeeper acceptance on another Mac. The app has
+App Sandbox disabled for local CLI process access and shared app/CLI storage.
 
 ## Next actions
 
-For useful live inventory, explicitly select the compartment that actually contains the intended resources and review discovery coverage before any local Apply. Subsequent product work is the separately scoped observed-connections collector/storage contract; wider macOS distribution also requires Developer ID signing and notarization. Additional native reservation and file-dialog checks can extend the current automated and baseline verification.
-
-Keep credentials, customer inventories, generated builds, databases, and machine-specific SDK paths out of Git.
+Finish v0.3.0 verification and publish the private universal DMG/checksum. Then
+scope the observed connectivity collector and topology model. Wider distribution
+requires Developer ID signing and notarization. Keep customer data, credentials,
+databases, generated builds and machine-specific SDK paths out of Git.

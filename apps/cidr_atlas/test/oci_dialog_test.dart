@@ -20,6 +20,9 @@ class FakeOciInventoryClient implements OciInventoryClient {
   OciAuthMode? requestedAuth;
   String? requestedProfile;
   String? requestedRegion;
+  List<String> requestedRegions = [];
+  bool requestedAllRegions = false;
+  bool requestedAllCompartments = false;
   String? requestedCompartment;
   OciCancellation? cancellation;
   Completer<OciDiscovery>? pending;
@@ -101,14 +104,19 @@ class FakeOciInventoryClient implements OciInventoryClient {
   @override
   Future<OciDiscovery> discover(
     OciConnection connection, {
-    required String region,
-    required String compartmentId,
+    List<String> regions = const [],
+    bool allRegions = false,
+    String? compartmentId,
+    bool allCompartments = false,
     OciCancellation? cancellation,
     void Function(String)? onProgress,
   }) async {
     networkCalls++;
     this.cancellation = cancellation;
-    requestedRegion = region;
+    requestedRegions = regions;
+    requestedRegion = regions.firstOrNull;
+    requestedAllRegions = allRegions;
+    requestedAllCompartments = allCompartments;
     requestedCompartment = compartmentId;
     onProgress?.call('Reading selected VCNs');
     if (pending != null) return pending!.future;
@@ -221,6 +229,178 @@ void main() {
             .onPressed,
         isNotNull,
       );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('all scope choices discover without replaced required fields', (
+    tester,
+  ) async {
+    final client = FakeOciInventoryClient()
+      ..pending = Completer<OciDiscovery>();
+    await openImport(tester, client);
+    await tester.ensureVisible(find.byKey(const ValueKey('oci-all-regions')));
+    await tester.tap(find.byKey(const ValueKey('oci-all-regions')));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('oci-all-compartments')),
+    );
+    await tester.tap(find.byKey(const ValueKey('oci-all-compartments')));
+    await tester.enterText(
+      find.byKey(const ValueKey('oci-domain')),
+      'corporate',
+    );
+    await tester.tap(find.text('Discover inventory'));
+    await tester.pump();
+    expect(client.requestedAllRegions, isTrue);
+    expect(client.requestedAllCompartments, isTrue);
+    expect(client.requestedRegions, isEmpty);
+    expect(client.requestedCompartment, isNull);
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.byKey(const ValueKey('oci-all-regions')),
+          )
+          .onChanged,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.byKey(const ValueKey('oci-all-compartments')),
+          )
+          .onChanged,
+      isNull,
+    );
+    client.pending!.complete(const OciDiscovery(bundleJson: bundle));
+    await tester.pumpAndSettle();
+    expect(find.text('1 network CIDR · OCI JSON'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('READY regions can be added to one discovery', (tester) async {
+    final client = FakeOciInventoryClient();
+    await openImport(tester, client);
+    await tester.tap(find.text('Load scopes'));
+    await tester.pumpAndSettle();
+    final additional = find.byKey(
+      const ValueKey('oci-extra-region-eu-frankfurt-1'),
+    );
+    await tester.ensureVisible(additional);
+    await tester.tap(additional);
+    await tester.enterText(
+      find.byKey(const ValueKey('oci-domain')),
+      'corporate',
+    );
+    await tester.tap(find.text('Discover inventory'));
+    await tester.pumpAndSettle();
+    expect(client.requestedRegions, ['us-phoenix-1', 'eu-frankfurt-1']);
+    expect(client.requestedAllRegions, isFalse);
+    expect(client.requestedCompartment, 'ocid1.tenancy.oc1..fictional');
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final allRegions in [true, false]) {
+    testWidgets(
+      'broad dimensions are independent with all regions $allRegions',
+      (tester) async {
+        final client = FakeOciInventoryClient();
+        await openImport(tester, client);
+        await manualScope(tester);
+        final option = find.byKey(
+          ValueKey(allRegions ? 'oci-all-regions' : 'oci-all-compartments'),
+        );
+        await tester.ensureVisible(option);
+        await tester.tap(option);
+        await tester.enterText(
+          find.byKey(const ValueKey('oci-domain')),
+          'corporate',
+        );
+        await tester.tap(find.text('Discover inventory'));
+        await tester.pumpAndSettle();
+        expect(client.requestedAllRegions, allRegions);
+        expect(client.requestedAllCompartments, !allRegions);
+        expect(
+          client.requestedRegions,
+          allRegions ? isEmpty : ['us-phoenix-1'],
+        );
+        expect(
+          client.requestedCompartment,
+          allRegions ? 'ocid1.compartment.oc1..fictional' : isNull,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets('empty all-scope result cannot apply and offers scope review', (
+    tester,
+  ) async {
+    final store = InventoryStore.memory();
+    addTearDown(store.close);
+    final client = FakeOciInventoryClient()..json = '{"vcns":[],"subnets":[]}';
+    await openImport(tester, client, store: store);
+    for (final key in ['oci-all-regions', 'oci-all-compartments']) {
+      final option = find.byKey(ValueKey(key));
+      await tester.ensureVisible(option);
+      await tester.tap(option);
+    }
+    await tester.enterText(
+      find.byKey(const ValueKey('oci-domain')),
+      'corporate',
+    );
+    await tester.tap(find.text('Discover inventory'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Discovery completed — no networks found'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('If all compartments are included'),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Apply import'),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(store.list(), isEmpty);
+    expect(store.history(), isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'manual selected regions reject blanks and accept comma separated values',
+    (tester) async {
+      final client = FakeOciInventoryClient();
+      await openImport(tester, client);
+      await manualScope(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('oci-region')),
+        'us-phoenix-1, ',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('oci-domain')),
+        'corporate',
+      );
+      await tester.tap(find.text('Discover inventory'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          'Enter region names separated by commas; remove blank entries.',
+        ),
+        findsOneWidget,
+      );
+      expect(client.networkCalls, 0);
+      await tester.enterText(
+        find.byKey(const ValueKey('oci-region')),
+        'us-phoenix-1, eu-frankfurt-1,us-phoenix-1',
+      );
+      await tester.tap(find.text('Discover inventory'));
+      await tester.pumpAndSettle();
+      expect(client.requestedRegions, ['us-phoenix-1', 'eu-frankfurt-1']);
       expect(tester.takeException(), isNull);
     },
   );
@@ -661,6 +841,11 @@ void main() {
       );
       expect(find.textContaining('No manual CIDR is needed'), findsOneWidget);
       expect(
+        find.textContaining('choose the compartment that contains'),
+        findsNothing,
+      );
+      expect(find.textContaining('IAM permissions'), findsOneWidget);
+      expect(
         find.textContaining('Import contains no prefix records.'),
         findsNothing,
       );
@@ -676,10 +861,8 @@ void main() {
       expect(store.list(), isEmpty);
       expect(store.history(), isEmpty);
       expect(tester.takeException(), isNull);
-      await tester.ensureVisible(
-        find.text('Choose another compartment or region'),
-      );
-      await tester.tap(find.text('Choose another compartment or region'));
+      await tester.ensureVisible(find.text('Review discovery scope'));
+      await tester.tap(find.text('Review discovery scope'));
       await tester.pumpAndSettle();
       expect(find.text('Discover OCI inventory'), findsOneWidget);
       expect(client.networkCalls, 1);

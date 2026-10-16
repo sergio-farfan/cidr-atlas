@@ -71,6 +71,7 @@ void main() {
 
   testWidgets('planning requires an explicit routing domain', (tester) async {
     await showPlanner(tester);
+    await tester.ensureVisible(find.byKey(const ValueKey('planner-calculate')));
     await tester.tap(find.byKey(const ValueKey('planner-calculate')));
     await tester.pumpAndSettle();
     expect(find.textContaining('Choose a routing domain'), findsWidgets);
@@ -106,6 +107,49 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+  testWidgets('desktop map and inspector share the first planning viewport', (
+    tester,
+  ) async {
+    await showPlanner(tester, size: const Size(1440, 900));
+    await plan(tester);
+    final map = tester.getRect(find.byType(InteractiveViewer));
+    final mapTitle = tester.getRect(find.text('Ordered address map'));
+    final inputs = tester.getRect(find.byKey(const ValueKey('planner-domain')));
+    final inspector = tester.getRect(find.byType(CidrInspector));
+    expect(mapTitle.top, lessThan(350));
+    expect(map.width, greaterThanOrEqualTo(600));
+    expect(inputs.right, lessThan(map.left));
+    expect(inspector.left, greaterThan(map.right));
+    expect(inspector.top, lessThan(300));
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final size in [const Size(390, 700), const Size(780, 650)]) {
+    testWidgets(
+      'small-window planning scrolls through inputs to reservation at $size',
+      (tester) async {
+        PrefixRecord? reserved;
+        await showPlanner(
+          tester,
+          size: size,
+          onReserve: (record) => reserved = record,
+        );
+        await plan(tester);
+        await tester.ensureVisible(find.byKey(const ValueKey('candidate-1')));
+        await tester.tap(find.byKey(const ValueKey('candidate-1')));
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('reserve-candidate')),
+        );
+        await tester.tap(find.byKey(const ValueKey('reserve-candidate')));
+        expect(reserved?.cidr, '10.42.31.0/24');
+        expect(reserved?.parentId, pool.id);
+        expect(InventoryRules.conflicts([pool, vcn, reserved!]), isEmpty);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets('input edits invalidate selected candidates before reservation', (
     tester,
   ) async {

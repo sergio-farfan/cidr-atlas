@@ -61,6 +61,17 @@ void main() {
   });
   tearDown(() async => directory.delete(recursive: true));
 
+  test('stamps the query region onto each collected resource', () async {
+    final client = OciCliClient(
+        runner: (command) async =>
+            jsonResult(suffix(command)[1] == 'vcn' ? [vcn] : [subnet]));
+    final result = await client.discover(connection,
+        regions: ['us-ashburn-1'], compartmentId: compartment);
+    final bundle = jsonDecode(result.bundleJson);
+    expect(bundle['vcns'].single['region'], 'us-ashburn-1');
+    expect(bundle['subnets'].single['region'], 'us-ashburn-1');
+  });
+
   test(
       'isolates connection options, rc defaults and OCI environment for every request',
       () async {
@@ -118,8 +129,10 @@ void main() {
           return jsonResult(suffix(command)[1] == 'vcn' ? [vcn] : [subnet]);
         });
     final result = await client.discover(connection,
-        region: 'us-ashburn-1', compartmentId: compartment);
-    expect(jsonDecode(result.bundleJson)['subnets'], [subnet]);
+        regions: ['us-ashburn-1'], compartmentId: compartment);
+    expect(jsonDecode(result.bundleJson)['subnets'], [
+      {...subnet, 'region': 'us-ashburn-1'}
+    ]);
     expect(commands.map(suffix), [
       ['network', 'vcn', 'list', '--compartment-id', compartment, '--all'],
       ['network', 'subnet', 'list', '--compartment-id', compartment, '--all'],
@@ -204,7 +217,7 @@ void main() {
       return jsonResult([]);
     });
     final result = await client.discover(tokenConnection,
-        region: 'us-phoenix-1', compartmentId: tenancy);
+        regions: ['us-phoenix-1'], compartmentId: tenancy);
     expect(jsonDecode(result.bundleJson)['vcns'], isEmpty);
   });
 
@@ -215,7 +228,7 @@ void main() {
       final client = OciCliClient(
           runner: (_) async => OciCommandResult(exitCode: 0, stdout: output));
       final discovery = await client.discover(connection,
-          region: 'us-phoenix-1', compartmentId: tenancy);
+          regions: ['us-phoenix-1'], compartmentId: tenancy);
       final bundle = jsonDecode(discovery.bundleJson);
       expect(bundle['vcns'], isEmpty);
       expect(bundle['subnets'], isEmpty);
@@ -238,10 +251,14 @@ void main() {
       return jsonResult([externalSubnet]);
     });
     final discovery = await client.discover(connection,
-        region: 'us-phoenix-1', compartmentId: compartment);
+        regions: ['us-phoenix-1'], compartmentId: compartment);
     final bundle = jsonDecode(discovery.bundleJson);
-    expect(bundle['vcns'], [externalVcn]);
-    expect(bundle['subnets'], [externalSubnet]);
+    expect(bundle['vcns'], [
+      {...externalVcn, 'region': 'us-phoenix-1'}
+    ]);
+    expect(bundle['subnets'], [
+      {...externalSubnet, 'region': 'us-phoenix-1'}
+    ]);
     expect(discovery.warnings.join(' '), isNot(contains('No VCNs or subnets')));
   });
 
@@ -266,7 +283,7 @@ void main() {
     });
     await expectLater(
         client.discover(connection,
-            region: 'us-phoenix-1', compartmentId: compartment),
+            regions: ['us-phoenix-1'], compartmentId: compartment),
         throwsA(isA<OciException>().having(
             (error) => error.message,
             'safe operation and expected response type',
@@ -288,7 +305,7 @@ void main() {
               ]));
     await expectLater(
         client.discover(connection,
-            region: 'us-phoenix-1', compartmentId: compartment),
+            regions: ['us-phoenix-1'], compartmentId: compartment),
         throwsA(isA<OciException>().having(
             (error) => error.message,
             'safe operation and expected field type',
@@ -308,7 +325,7 @@ void main() {
             exitCode: 0, stdout: '{"data":"FICTIONAL_SECRET"}'));
     await expectLater(
         client.discover(connection,
-            region: 'us-phoenix-1', compartmentId: compartment),
+            regions: ['us-phoenix-1'], compartmentId: compartment),
         throwsA(isA<OciException>().having(
             (error) => error.message,
             'safe operation and expected list type',
@@ -323,7 +340,7 @@ void main() {
             exitCode: 1, stdout: '', stderr: 'FICTIONAL_SECRET'));
     await expectLater(
         client.discover(connection,
-            region: 'us-phoenix-1', compartmentId: compartment),
+            regions: ['us-phoenix-1'], compartmentId: compartment),
         throwsA(isA<OciException>().having((error) => error.message,
             'failure is safe', isNot(contains('FICTIONAL_SECRET')))));
   });
@@ -352,11 +369,14 @@ void main() {
       ]);
     });
     final discovery = await client.discover(connection,
-        region: 'us-phoenix-1',
+        regions: ['us-phoenix-1'],
         compartmentId: compartment,
         onProgress: progress.add);
     final bundle = jsonDecode(discovery.bundleJson);
-    expect(bundle['vcns'], [vcn, externalVcn]);
+    expect(bundle['vcns'], [
+      {...vcn, 'region': 'us-phoenix-1'},
+      {...externalVcn, 'region': 'us-phoenix-1'}
+    ]);
     expect(bundle['subnets'].length, 3);
     expect(commands, [
       ['network', 'vcn', 'list', '--compartment-id', compartment, '--all'],
@@ -399,7 +419,7 @@ void main() {
         return jsonResult(args[1] == 'vcn' ? [] : [externalSubnet]);
       });
       final discovery = await client.discover(connection,
-          region: 'us-phoenix-1', compartmentId: compartment);
+          regions: ['us-phoenix-1'], compartmentId: compartment);
       final bundle = jsonDecode(discovery.bundleJson);
       expect(bundle['vcns'], isEmpty);
       expect(bundle['subnets'][0]['vcn-id'], 'vcn-context');
@@ -420,7 +440,7 @@ void main() {
                 exitCode: 1, stdout: '', stderr: 'FICTIONAL_SECRET'));
     await expectLater(
         client.discover(connection,
-            region: 'us-phoenix-1', compartmentId: compartment),
+            regions: ['us-phoenix-1'], compartmentId: compartment),
         throwsA(isA<OciException>().having((e) => e.message, 'safe error',
             isNot(contains('FICTIONAL_SECRET')))));
   });
@@ -436,7 +456,7 @@ void main() {
                 'ServiceError:\n{"code":"NotAuthenticated","message":"FICTIONAL_SECRET"}'));
     await expectLater(
         client.discover(connection,
-            region: 'us-phoenix-1', compartmentId: compartment),
+            regions: ['us-phoenix-1'], compartmentId: compartment),
         throwsA(isA<OciException>().having(
             (e) => e.message,
             'guidance',
@@ -457,7 +477,7 @@ void main() {
           runner: (_) async => OciCommandResult(exitCode: 0, stdout: stdout));
       await expectLater(
           client.discover(connection,
-              region: 'us-phoenix-1', compartmentId: compartment),
+              regions: ['us-phoenix-1'], compartmentId: compartment),
           throwsA(isA<OciException>()));
     });
   }
@@ -471,7 +491,7 @@ void main() {
     });
     await expectLater(
         client.discover(connection,
-            region: 'us-phoenix-1', compartmentId: compartment),
+            regions: ['us-phoenix-1'], compartmentId: compartment),
         throwsA(isA<OciException>()));
   });
 
@@ -487,7 +507,7 @@ void main() {
     });
     await expectLater(
         client.discover(connection,
-            region: 'us-phoenix-1', compartmentId: compartment),
+            regions: ['us-phoenix-1'], compartmentId: compartment),
         throwsA(isA<OciException>()));
   });
 
@@ -502,7 +522,7 @@ void main() {
       return pending.future;
     });
     final result = client.discover(connection,
-        region: 'us-phoenix-1',
+        regions: ['us-phoenix-1'],
         compartmentId: compartment,
         cancellation: cancellation);
     final expectation = expectLater(
@@ -532,7 +552,7 @@ void main() {
         });
     await expectLater(
         client.discover(connection,
-            region: 'us-phoenix-1', compartmentId: compartment),
+            regions: ['us-phoenix-1'], compartmentId: compartment),
         throwsA(isA<OciException>()
             .having((e) => e.message, 'message', contains('timed out'))));
     expect(active?.cancellation?.isCancelled, isTrue);
@@ -544,7 +564,7 @@ void main() {
         runner: (_) => Completer<OciCommandResult>().future);
     await expectLater(
         client.discover(connection,
-            region: 'us-phoenix-1', compartmentId: compartment),
+            regions: ['us-phoenix-1'], compartmentId: compartment),
         throwsA(isA<OciException>()
             .having((e) => e.message, 'message', contains('timed out'))));
   });
@@ -564,7 +584,7 @@ void main() {
       return jsonResult(args[1] == 'vcn' ? [] : [externalSubnet]);
     });
     final pending = client.discover(connection,
-        region: 'us-phoenix-1',
+        regions: ['us-phoenix-1'],
         compartmentId: compartment,
         cancellation: cancellation);
     final expectation = expectLater(
@@ -583,7 +603,7 @@ void main() {
     final client = OciCliClient(runner: (_) async => jsonResult([externalVcn]));
     await expectLater(
         client.discover(connection,
-            region: 'us-phoenix-1', compartmentId: compartment),
+            regions: ['us-phoenix-1'], compartmentId: compartment),
         throwsA(isA<OciException>()));
   });
 
@@ -594,7 +614,7 @@ void main() {
       return jsonResult([]);
     });
     await expectLater(
-        client.discover(connection, region: ' ', compartmentId: compartment),
+        client.discover(connection, regions: [' '], compartmentId: compartment),
         throwsA(isA<OciException>()));
     expect(calls, 0);
   });
@@ -610,7 +630,7 @@ void main() {
             stderr: 'Aborted! FICTIONAL_SECRET'));
     await expectLater(
         client.discover(connection,
-            region: 'us-phoenix-1', compartmentId: compartment),
+            regions: ['us-phoenix-1'], compartmentId: compartment),
         throwsA(isA<OciException>().having(
             (error) => error.message,
             'safe renewal guidance',
@@ -628,7 +648,7 @@ void main() {
                 'FICTIONAL_SECRET resource display-name says session expired'));
     await expectLater(
         client.discover(connection,
-            region: 'us-phoenix-1', compartmentId: compartment),
+            regions: ['us-phoenix-1'], compartmentId: compartment),
         throwsA(isA<OciException>().having(
             (error) => error.message,
             'safe generic guidance',

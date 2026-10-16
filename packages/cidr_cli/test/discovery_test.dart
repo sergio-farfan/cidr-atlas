@@ -48,6 +48,9 @@ class FakeOciInventoryClient implements OciInventoryClient {
   String? selectedProfile, selectedConfig, selectedExecutable;
   OciAuthMode? selectedAuth;
   String? selectedRegion, selectedCompartment;
+  List<String> selectedRegions = [];
+  bool allRegions = false;
+  bool allCompartments = false;
   int calls = 0;
 
   @override
@@ -71,12 +74,17 @@ class FakeOciInventoryClient implements OciInventoryClient {
 
   @override
   Future<OciDiscovery> discover(OciConnection connection,
-      {required String region,
-      required String compartmentId,
+      {List<String> regions = const [],
+      bool allRegions = false,
+      String? compartmentId,
+      bool allCompartments = false,
       OciCancellation? cancellation,
       void Function(String)? onProgress}) async {
     calls++;
-    selectedRegion = region;
+    selectedRegions = regions;
+    selectedRegion = regions.firstOrNull;
+    this.allRegions = allRegions;
+    this.allCompartments = allCompartments;
     selectedCompartment = compartmentId;
     onProgress?.call('Reading fictional subnets');
     duringDiscovery?.call(cancellation!);
@@ -149,7 +157,9 @@ void main() {
       for (final flag in [
         '--profile',
         '--region',
+        '--all-regions',
         '--compartment-id',
+        '--all-compartments',
         '--routing-domain',
         '--config-file',
         '--oci-bin',
@@ -193,6 +203,75 @@ void main() {
       expect((await run(args)).code, 2);
     }
     expect(client.calls, 0);
+  });
+
+  test('multiple selected regions accept repeated and comma separated values',
+      () async {
+    final result =
+        await run([..._scope, '--region', 'eu-frankfurt-1, us-phoenix-1']);
+    expect(result.code, 0, reason: result.error);
+    expect(client.selectedRegions, ['us-phoenix-1', 'eu-frankfurt-1']);
+    expect(client.allRegions, isFalse);
+    expect(client.allCompartments, isFalse);
+    expect(snapshot().history, 0);
+  });
+
+  test('all subscribed regions and accessible compartments preview in one run',
+      () async {
+    final result = await run([
+      'discover',
+      'oci',
+      '--profile',
+      'FICTIONAL',
+      '--all-regions',
+      '--all-compartments',
+      '--routing-domain',
+      'corporate',
+    ]);
+    expect(result.code, 0, reason: result.error);
+    expect(client.allRegions, isTrue);
+    expect(client.selectedRegions, isEmpty);
+    expect(client.allCompartments, isTrue);
+    expect(client.selectedCompartment, isNull);
+    expect(snapshot().records, isEmpty);
+    expect(snapshot().history, 0);
+  });
+
+  test('mixed broad and selected dimensions stay independent', () async {
+    for (final allRegions in [true, false]) {
+      final result = await run([
+        'discover',
+        'oci',
+        '--profile',
+        'FICTIONAL',
+        if (allRegions) '--all-regions' else ...['--region', 'us-phoenix-1'],
+        if (!allRegions)
+          '--all-compartments'
+        else ...['--compartment-id', 'fictional-compartment'],
+        '--routing-domain',
+        'corporate',
+      ]);
+      expect(result.code, 0, reason: result.error);
+      expect(client.allRegions, allRegions);
+      expect(client.allCompartments, !allRegions);
+    }
+  });
+
+  test(
+      'conflicting modes and blank region members fail before connection or db',
+      () async {
+    for (final args in [
+      [..._scope, '--all-regions'],
+      [..._scope, '--all-compartments'],
+      [..._scope, '--region', 'eu-frankfurt-1,'],
+      [..._scope, '--region', ',eu-frankfurt-1'],
+      [..._scope, '--region', 'eu-frankfurt-1, ,us-phoenix-1'],
+    ]) {
+      final result = await run(args);
+      expect(result.code, 2, reason: '$args: ${result.error}');
+      expect(client.calls, 0);
+      expect(File(database).existsSync(), isFalse);
+    }
   });
 
   test('explicit overrides reach the shared client and preview writes nothing',
@@ -248,11 +327,25 @@ void main() {
     final before = snapshot();
     client.failure =
         const OciException('Subnet list failed. Check read permissions.');
-    final result = await run([..._scope, '--apply']);
-    expect(result.code, 1);
-    expect(result.error, contains('Subnet list failed'));
-    expect(snapshot().records.map((r) => r.id), ['existing']);
-    expect(snapshot().history, before.history);
+    for (final scope in [
+      _scope,
+      [
+        'discover',
+        'oci',
+        '--profile',
+        'FICTIONAL',
+        '--all-regions',
+        '--all-compartments',
+        '--routing-domain',
+        'corporate'
+      ],
+    ]) {
+      final result = await run([...scope, '--apply']);
+      expect(result.code, 1);
+      expect(result.error, contains('Subnet list failed'));
+      expect(snapshot().records.map((r) => r.id), ['existing']);
+      expect(snapshot().history, before.history);
+    }
   });
 
   test('cancelled discovery ignores late successful completion without writes',

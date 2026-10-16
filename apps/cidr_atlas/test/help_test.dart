@@ -63,6 +63,28 @@ void main() {
     );
   });
 
+  testWidgets(
+    'discovery guide explains broad scopes, IAM and one combined preview',
+    (tester) async {
+      await openHelp(tester, topic: HelpTopic.ociDiscovery);
+      expect(
+        find.textContaining('All READY subscribed regions'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('All accessible compartments and subcompartments'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('IAM-hidden'), findsOneWidget);
+      expect(find.textContaining('one combined preview'), findsOneWidget);
+      expect(
+        find.textContaining('Discover each intended child separately'),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('copy exports a usable fictional CSV example', (tester) async {
     String? copied;
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(

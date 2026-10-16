@@ -767,12 +767,12 @@ class _ImportDialogState extends State<ImportDialog> {
                     ),
                     const SizedBox(height: 10),
                     const MessagePanel(
-                      message: 'No manual CIDR is needed for OCI discovery. There is nothing to save. Check the selected profile, resource region, and compartment. Tenancy root and parent compartments do not include their children; choose the compartment that contains your VCNs or subnets.',
+                      message: 'No manual CIDR is needed for OCI discovery. There is nothing to save. Review the profile, resource regions, selected scope and IAM permissions. For a direct compartment, networks may be in a child; enable all compartments or select that child. If all compartments are included, check permissions and region subscriptions.',
                     ),
                     TextButton.icon(
                       onPressed: _discoverOci,
                       icon: const Icon(Icons.refresh, size: 18),
-                      label: const Text('Choose another compartment or region'),
+                      label: const Text('Review discovery scope'),
                     ),
                   ],
                   if (!emptyDiscovery &&

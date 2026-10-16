@@ -126,7 +126,7 @@ The desktop app's existing Import dialog offers live discovery alongside offline
 CSV/JSON files. It reads profile-selection metadata when discovery opens, then
 requires explicit **Load scopes** and **Discover inventory** actions for network
 requests. The CLI exposes the same adapter through `discover oci`, requiring
-profile, region, compartment, and routing domain flags. It previews by default;
+profile and routing domain, plus explicit region and compartment scope modes. It previews by default;
 `--apply` performs the shared atomic import. A successful CLI preview can create
 the selected SQLite file but changes no inventory or history records.
 
@@ -140,19 +140,26 @@ outside CIDR Atlas. These assumptions follow Oracle's
 [configuration/profile format](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdkconfig.htm)
 and [token authentication lifecycle](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/clitoken.htm).
 
-Region and compartment enumeration returns subscribed regions and accessible
-active compartments plus a tenancy-root entry. The UI enables READY regions and
-offers manual scope entry when IAM prevents enumeration. Enumerating a
-compartment subtree populates a selector; resource collection still lists only
-VCNs and subnets directly in one explicitly selected compartment and region.
-Selecting a parent or root does not collect descendant resources. Both resource
-lists fetch all pages without display-name, VCN, or lifecycle filters, using
-Oracle's [VCN list](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/vcn/list.html)
+Region selection supports one/several explicit regions or all READY subscribed
+regions; compartment selection supports one direct compartment or all accessible
+active compartments and subcompartments, including root. Broad modes enumerate
+fresh scopes during collection. Compartments are global and enumerated once;
+regional VCN/subnet lists traverse the selected region × compartment matrix
+sequentially, with all pages and no resource filters. Each resource records its
+actual query region, and multi-region metadata omits a misleading scalar region.
+Manual comma-separated regions and a compartment OCID remain available for narrow
+scopes. READY filtering and root-only subtree enumeration follow Oracle's
+[region subscription](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/iam/region-subscription/list.html)
+and [compartment](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/iam/compartment/list.html)
+references. ACCESSIBLE reflects INSPECT visibility, which cannot establish network
+read permission or visibility of all tenancy compartments. Required failures stop
+the entire run; no partial bundle is applicable. Single-compartment mode remains
+direct only. Oracle's [VCN list](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/vcn/list.html)
 and [subnet list](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/subnet/list.html)
-contracts.
+define the regional resource calls.
 
 A subnet can reference a VCN absent from the selected-compartment list. The
-collector deduplicates those references and performs individual
+collector first completes all regional lists, deduplicates references per region/ID and performs individual
 [VCN gets](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/vcn/get.html)
 for context; it does not enumerate their other subnets. Context from another
 compartment is identified in coverage. A denied/not-found context lookup is a
@@ -162,8 +169,8 @@ no applicable partial bundle. Local records remain untouched.
 
 OCI CLI 3.94.1 suppresses output for an empty list. A successful blank response
 is normalized only for the four known list operations; object lookups still
-require a valid object. An empty VCN and subnet result produces direct-compartment
-guidance. Genuine response-shape errors identify the operation and expected field
+require a valid object. An empty result produces guidance for the requested scope without implying
+that a CIDR must be entered or an already-included child separately imported. Genuine response-shape errors identify the operation and expected field
 or type without raw resource values. The behavior follows Oracle's
 [CLI renderer](https://github.com/oracle/oci-cli/blob/v3.94.1/src/oci_cli/cli_util.py#L893-L947).
 
@@ -176,12 +183,14 @@ settings remain. Oracle documents these sources of defaults in
 and [CLI rc configuration](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliconfigure.htm).
 The child receives closed stdin, both output streams are consumed, OCI retries
 are bounded, and no raw credential-bearing diagnostics are presented. Requests
-have a 60-second deadline and the complete collection has a 180-second deadline,
+have a 60-second deadline and the complete collection has a 180-second deadline for one selected pair or
+1800 seconds for broader modes,
 followed by bounded termination and stream cleanup. Dialog dismissal and CLI
 Ctrl-C cancel active collection and reject late results.
 
-The returned bundle records tenancy, region, UTC collection start/completion,
-the selected compartment, all-page collection, and context outcomes. It describes
+The returned bundle records tenancy, actual regions/compartments and selection
+modes, completed pairs/resource counts, UTC collection start/completion, all-page
+collection, and regional context outcomes. It describes
 an observation interval rather than a transactionally consistent snapshot or a
 complete tenancy audit. CIDR normalization and hierarchy validation remain in
 `cidr_data`/`cidr_core`. The JSON preview keeps its `OCI JSON` source identity and

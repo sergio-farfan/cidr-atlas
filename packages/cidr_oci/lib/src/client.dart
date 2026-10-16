@@ -22,8 +22,10 @@ abstract interface class OciInventoryClient {
   Future<List<OciCompartment>> compartments(OciConnection connection,
       {required String region, OciCancellation? cancellation});
   Future<OciDiscovery> discover(OciConnection connection,
-      {required String region,
-      required String compartmentId,
+      {List<String> regions = const [],
+      bool allRegions = false,
+      String? compartmentId,
+      bool allCompartments = false,
       OciCancellation? cancellation,
       void Function(String)? onProgress});
 }
@@ -34,7 +36,7 @@ class OciCliClient implements OciInventoryClient {
       Map<String, String>? environment,
       DateTime Function()? clock,
       Duration commandTimeout = const Duration(seconds: 60),
-      Duration collectionTimeout = const Duration(seconds: 180),
+      Duration? collectionTimeout,
       List<String>? executableCandidates})
       : _environment = Map.unmodifiable(environment ?? Platform.environment),
         _candidates = executableCandidates ??
@@ -49,7 +51,7 @@ class OciCliClient implements OciInventoryClient {
   final Map<String, String> _environment;
   final List<String> _candidates;
   final DateTime Function() _clock;
-  final Duration _collectionTimeout;
+  final Duration? _collectionTimeout;
   final OciCommands _commands;
 
   @override
@@ -158,115 +160,236 @@ class OciCliClient implements OciInventoryClient {
 
   @override
   Future<OciDiscovery> discover(OciConnection connection,
-      {required String region,
-      required String compartmentId,
+      {List<String> regions = const [],
+      bool allRegions = false,
+      String? compartmentId,
+      bool allCompartments = false,
       OciCancellation? cancellation,
       void Function(String)? onProgress}) async {
     checkCancellation(cancellation);
-    if (region.trim().isEmpty || compartmentId.trim().isEmpty) {
+    final requestedRegions = regions.map((region) => region.trim()).toList();
+    final selectedCompartment = compartmentId?.trim();
+    if (requestedRegions.any((region) => region.isEmpty) ||
+        (allRegions && requestedRegions.isNotEmpty) ||
+        (!allRegions && requestedRegions.isEmpty)) {
       throw const OciException(
-          'Select a region and compartment before discovery.');
+          'Select one or more regions, or all READY regions, before discovery. These region modes cannot be combined.');
     }
+    if ((allCompartments && compartmentId != null) ||
+        (!allCompartments &&
+            (selectedCompartment == null || selectedCompartment.isEmpty))) {
+      throw const OciException(
+          'Select one compartment, or all accessible compartments, before discovery. These compartment modes cannot be combined.');
+    }
+    final selectedRegions = requestedRegions.toSet().toList();
     final started = _clock().toUtc();
     final scopedCancellation = OciCancellation();
     cancellation?.whenCancelled.then((_) => scopedCancellation.cancel());
+    final broadScope =
+        allRegions || allCompartments || selectedRegions.length > 1;
     var expired = false;
-    final deadline = Timer(_collectionTimeout, () {
+    var currentOperation = 'scope enumeration';
+    var completedScopes = 0;
+    var scopeCount = 0;
+    final deadline = Timer(
+        _collectionTimeout ?? Duration(seconds: broadScope ? 1800 : 180), () {
       expired = true;
       scopedCancellation.cancel();
     });
     final warnings = <String>[];
-    final contextSuccesses = <String>[];
-    final contextFailures = <String>[];
+    final contextSuccesses = <Map<String, String>>[];
+    final contextFailures = <Map<String, String>>[];
+    final vcns = <Map<String, dynamic>>[];
+    final subnets = <Map<String, dynamic>>[];
     try {
-      onProgress?.call('Loading selected-compartment VCNs');
-      final vcns = responseList(
-          await _commands.request(
-              connection,
-              region,
-              [
-                'network',
-                'vcn',
-                'list',
-                '--compartment-id',
-                compartmentId,
-                '--all'
-              ],
-              cancellation: scopedCancellation,
-              step: 'VCN list',
-              listResponse: true),
-          step: 'VCN list');
-      _validateResources(vcns, compartmentId: compartmentId, step: 'VCN list');
-      onProgress?.call('Loading selected-compartment subnets');
-      final subnets = responseList(
-          await _commands.request(
-              connection,
-              region,
-              [
-                'network',
-                'subnet',
-                'list',
-                '--compartment-id',
-                compartmentId,
-                '--all'
-              ],
-              cancellation: scopedCancellation,
-              step: 'subnet list',
-              listResponse: true),
-          step: 'subnet list');
-      _validateResources(subnets,
-          compartmentId: compartmentId, subnets: true, step: 'subnet list');
-      if (vcns.isEmpty && subnets.isEmpty) {
-        warnings.add(
-            'No VCNs or subnets were returned for the selected compartment and region. '
-            'Discovery includes resources directly in that compartment; choose a child compartment to discover its resources.');
-      }
-      final known = vcns.map((entry) => entry['id'] as String).toSet();
-      final missing = subnets
-          .map((entry) => entry['vcn-id'] as String)
-          .where((id) => !known.contains(id))
-          .toSet();
-      for (final id in missing) {
-        checkCancellation(scopedCancellation);
-        onProgress?.call('Loading referenced VCN context');
+      if (allRegions) {
+        currentOperation = 'region subscription list';
+        onProgress?.call('Loading READY region subscriptions');
+        final List<OciRegion> subscriptions;
         try {
-          final context = responseObject(
-              await _commands.request(
-                  connection, region, ['network', 'vcn', 'get', '--vcn-id', id],
-                  cancellation: scopedCancellation,
-                  step: 'referenced VCN lookup'),
-              step: 'referenced VCN lookup');
-          _validateResources([context], step: 'referenced VCN lookup');
-          if (context['id'] != id)
-            throw malformedResponse('referenced VCN lookup',
-                'field "id" did not match the requested resource');
-          vcns.add(context);
-          contextSuccesses.add(id);
-          final contextCompartment = context['compartment-id'];
-          warnings.add(
-              'Referenced VCN $id was included as context from compartment $contextCompartment; its other subnets were not collected.');
-        } on OciCommandFailure catch (error) {
-          if (!error.unavailableContext) rethrow;
-          contextFailures.add(id);
-          warnings.add(
-              'Referenced VCN $id is unavailable or access was denied. Its subnet references remain; this does not prove deletion.');
+          subscriptions =
+              await this.regions(connection, cancellation: scopedCancellation);
+        } on OciException catch (error) {
+          throw OciException('Region enumeration failed: ${error.message}');
         }
+        for (final subscription in subscriptions) {
+          if (subscription.status == 'READY') {
+            if (!selectedRegions.contains(subscription.name))
+              selectedRegions.add(subscription.name);
+          } else {
+            warnings.add('Region ${subscription.name} was excluded because its '
+                'subscription status is ${subscription.status}, not READY.');
+          }
+        }
+        if (selectedRegions.isEmpty)
+          throw const OciException(
+              'No READY subscribed regions were returned. Check region subscriptions and IAM visibility, then retry.');
       }
       checkCancellation(scopedCancellation);
+      final List<String> compartmentIds;
+      if (allCompartments) {
+        currentOperation =
+            'compartment list in region ${selectedRegions.first}, '
+            'tenancy root ${connection.tenancyId}';
+        onProgress
+            ?.call('Loading accessible active compartments and descendants');
+        try {
+          final scopes = await compartments(connection,
+              region: selectedRegions.first, cancellation: scopedCancellation);
+          compartmentIds = scopes.map((scope) => scope.id).toList();
+        } on OciException catch (error) {
+          throw OciException('$currentOperation failed: ${error.message}');
+        }
+        warnings.add('All accessible active compartments and the tenancy root '
+            'were included. IAM-hidden compartments may not be visible; '
+            'compartment visibility does not guarantee permission to list networks.');
+      } else {
+        compartmentIds = [selectedCompartment!];
+      }
+      scopeCount = selectedRegions.length * compartmentIds.length;
+      for (final region in selectedRegions) {
+        final regionalVcns = <String, Map<String, dynamic>>{};
+        final regionalSubnets = <String, Map<String, dynamic>>{};
+        for (final selected in compartmentIds) {
+          final position = completedScopes + 1;
+          final scope = 'region $region, compartment $selected '
+              '(scope $position/$scopeCount; $completedScopes completed)';
+          for (final kind in ['vcn', 'subnet']) {
+            checkCancellation(scopedCancellation);
+            final step = kind == 'vcn' ? 'VCN list' : 'subnet list';
+            currentOperation = '$step in $scope';
+            onProgress?.call('Loading $currentOperation');
+            final Object? response;
+            try {
+              response = await _commands.request(
+                  connection,
+                  region,
+                  [
+                    'network',
+                    kind,
+                    'list',
+                    '--compartment-id',
+                    selected,
+                    '--all'
+                  ],
+                  cancellation: scopedCancellation,
+                  step: currentOperation,
+                  listResponse: true);
+            } on OciException catch (error) {
+              throw OciException('$currentOperation failed: ${error.message}');
+            }
+            final resources = responseList(response, step: currentOperation);
+            _validateResources(resources,
+                compartmentId: selected,
+                subnets: kind == 'subnet',
+                step: currentOperation);
+            final target = kind == 'vcn' ? regionalVcns : regionalSubnets;
+            for (final resource in resources) {
+              final id = resource['id'] as String;
+              if (target.containsKey(id))
+                throw malformedResponse(currentOperation,
+                    'field "id" repeated across compartment scopes');
+              target[id] = {...resource, 'region': region};
+            }
+          }
+          completedScopes++;
+        }
+        final missing = regionalSubnets.values
+            .map((entry) => entry['vcn-id'] as String)
+            .where((id) => !regionalVcns.containsKey(id))
+            .toSet();
+        var contextNumber = 0;
+        for (final id in missing) {
+          checkCancellation(scopedCancellation);
+          contextNumber++;
+          final referringCompartment = regionalSubnets.values
+              .firstWhere((entry) => entry['vcn-id'] == id)['compartment-id'];
+          currentOperation = 'referenced VCN lookup in region $region, '
+              'subnet compartment $referringCompartment '
+              '(context $contextNumber/${missing.length}; '
+              '$completedScopes/$scopeCount scopes completed)';
+          onProgress?.call('Loading $currentOperation');
+          try {
+            final Object? response;
+            try {
+              response = await _commands.request(
+                  connection, region, ['network', 'vcn', 'get', '--vcn-id', id],
+                  cancellation: scopedCancellation, step: currentOperation);
+            } on OciCommandFailure catch (error) {
+              if (error.unavailableContext) rethrow;
+              throw OciException('$currentOperation failed: ${error.message}');
+            } on OciException catch (error) {
+              throw OciException('$currentOperation failed: ${error.message}');
+            }
+            final context = responseObject(response, step: currentOperation);
+            _validateResources([context], step: currentOperation);
+            if (context['id'] != id)
+              throw malformedResponse(currentOperation,
+                  'field "id" did not match the requested resource');
+            regionalVcns[id] = {...context, 'region': region};
+            contextSuccesses.add({'region': region, 'id': id});
+            final contextCompartment = context['compartment-id'];
+            warnings.add('Referenced VCN $id in region $region was included as '
+                'context from compartment $contextCompartment; subnets are '
+                'collected only in the requested compartment scopes.');
+          } on OciCommandFailure catch (error) {
+            if (!error.unavailableContext) rethrow;
+            contextFailures.add({'region': region, 'id': id});
+            warnings.add('Referenced VCN $id in region $region is unavailable '
+                'or access was denied. Its subnet references remain; '
+                'this does not prove deletion.');
+          }
+        }
+        vcns.addAll(regionalVcns.values);
+        subnets.addAll(regionalSubnets.values);
+      }
+      checkCancellation(scopedCancellation);
+      if (vcns.isEmpty && subnets.isEmpty) {
+        warnings.add(allCompartments
+            ? 'No VCNs or subnets were returned across the collected regions '
+                'and accessible compartments. Check the selected regions, IAM '
+                'network permissions and inventory coverage.'
+            : 'No VCNs or subnets were returned for the selected compartment '
+                'and regions. Discovery includes resources directly in that '
+                'compartment; choose a child compartment or all accessible '
+                'compartments to discover its resources.');
+      }
       final completed = _clock().toUtc();
-      final coverage =
-          'Scoped observation in region $region, compartment $compartmentId, '
-          'collecting all pages of directly contained VCNs and subnets only (no descendant resource traversal). '
-          'Observation interval ${started.toIso8601String()} to ${completed.toIso8601String()}. '
-          'Referenced VCN context included: ${contextSuccesses.isEmpty ? "none" : contextSuccesses.join(", ")}; '
-          'unavailable context: ${contextFailures.isEmpty ? "none" : contextFailures.join(", ")}. '
-          '${warnings.join(" ")} This is not a transactionally consistent snapshot and not a complete tenancy audit. '
-          'Omitted resources are not evidence of deletion or free address space.';
+      final contextIncluded = contextSuccesses
+          .map((context) => '${context["id"]} (${context["region"]})')
+          .join(', ');
+      final contextUnavailable = contextFailures
+          .map((context) => '${context["id"]} (${context["region"]})')
+          .join(', ');
+      final coverage = 'Scoped observation across regions '
+          '${selectedRegions.join(", ")}, compartments ${compartmentIds.join(", ")}, '
+          'collecting all pages of directly contained VCNs and subnets for '
+          '$completedScopes/$scopeCount region/compartment scopes. '
+          '${allCompartments ? "Accessible descendants and tenancy root included; IAM-hidden compartments remain outside observed coverage." : "No descendant resource traversal."} '
+          'Observation interval ${started.toIso8601String()} to '
+          '${completed.toIso8601String()}. '
+          'Referenced VCN context included: ${contextIncluded.isEmpty ? "none" : contextIncluded}; '
+          'unavailable context: ${contextUnavailable.isEmpty ? "none" : contextUnavailable}. '
+          '${warnings.join(" ")} This is not a transactionally consistent '
+          'snapshot and not a complete tenancy audit. Omitted resources are '
+          'not evidence of deletion or free address space.';
       return OciDiscovery(
           bundleJson: jsonEncode({
             'metadata': {
               'tenancy': connection.tenancyId,
-              'region': region,
+              if (selectedRegions.length == 1) 'region': selectedRegions.single,
+              'regions': selectedRegions,
+              'compartmentIds': compartmentIds,
+              'regionMode': allRegions ? 'allReady' : 'selected',
+              'compartmentMode': allCompartments ? 'allAccessible' : 'selected',
+              'scopeCount': scopeCount,
+              'completedScopeCount': completedScopes,
+              'vcnCount': vcns.length,
+              'subnetCount': subnets.length,
+              'contextIncludedCount': contextSuccesses.length,
+              'contextUnavailableCount': contextFailures.length,
+              'contextIncluded': contextSuccesses,
+              'contextUnavailable': contextFailures,
               'collectionStartedAt': started.toIso8601String(),
               'collectedAt': completed.toIso8601String(),
               'coverage': coverage
@@ -274,11 +397,12 @@ class OciCliClient implements OciInventoryClient {
             'vcns': vcns,
             'subnets': subnets,
           }),
-          warnings: List.unmodifiable(warnings));
+          warnings: List.unmodifiable(warnings.toSet()));
     } on OciException {
       if (expired)
-        throw const OciException(
-            'OCI collection timed out. Retry the selected scope or check connectivity.');
+        throw OciException('OCI collection timed out during $currentOperation. '
+            '$completedScopes/$scopeCount scopes completed; no partial '
+            'inventory was returned. Retry a smaller scope or check connectivity.');
       rethrow;
     } finally {
       deadline.cancel();

@@ -41,6 +41,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
   final _growth = TextEditingController();
   final _additional = TextEditingController(text: '0');
   final _transform = TransformationController();
+  final _workspaceKey = GlobalKey();
   final _candidateFocus = List.generate(12, (_) => FocusNode());
   String? _domain;
   String _poolId = '';
@@ -222,6 +223,16 @@ class _VisualPlannerState extends State<VisualPlanner> {
         _error = null;
       });
       _transform.value = Matrix4.identity();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final workspace = _workspaceKey.currentContext;
+        if (mounted && _result != null && workspace != null) {
+          Scrollable.ensureVisible(
+            workspace,
+            alignment: 0,
+            duration: const Duration(milliseconds: 180),
+          );
+        }
+      });
     } catch (error) {
       setState(() {
         _clear();
@@ -294,7 +305,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
     key: ValueKey(keyName),
     initialValue: value,
     isExpanded: true,
-    decoration: InputDecoration(labelText: label),
+    decoration: InputDecoration(labelText: label, isDense: true),
     hint: hint == null ? null : Text(hint),
     items: items,
     onChanged: onChanged,
@@ -312,6 +323,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
     keyboardType: TextInputType.number,
     decoration: InputDecoration(
       labelText: label,
+      isDense: true,
       hintText: hint,
       helperText: helper,
       helperMaxLines: 3,
@@ -347,9 +359,14 @@ class _VisualPlannerState extends State<VisualPlanner> {
       Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const Text(
+            'Planning inputs',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 18),
           Wrap(
             spacing: 12,
-            runSpacing: 16,
+            runSpacing: 14,
             children: [
               field(
                 _select<String>(
@@ -406,6 +423,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
                     controller: _manualDomain,
                     decoration: const InputDecoration(
                       labelText: 'Explicit routing domain',
+                      isDense: true,
                       hintText: 'corporate-connected',
                     ),
                   ),
@@ -417,6 +435,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
                     controller: _manualPool,
                     decoration: const InputDecoration(
                       labelText: 'Manual pool CIDR',
+                      isDense: true,
                       helperText: 'Boundary to search, e.g. 10.64.0.0/16. This is not the new subnet size.',
                       helperMaxLines: 3,
                     ),
@@ -567,11 +586,14 @@ class _VisualPlannerState extends State<VisualPlanner> {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final width = constraints.maxWidth - 40;
-      final wide = width >= 1160;
+      final padding = constraints.maxWidth < 650 ? 12.0 : 20.0;
+      final width = math.max(0.0, constraints.maxWidth - padding * 2);
+      final rail = width >= 960;
+      final wide = width >= 1320;
+      final hasDetails = _candidate != null || _inspected != null;
       return SingleChildScrollView(
         key: const ValueKey('planner-scroll'),
-        padding: const EdgeInsets.all(20),
+        padding: EdgeInsets.all(padding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -579,8 +601,8 @@ class _VisualPlannerState extends State<VisualPlanner> {
               children: [
                 const Expanded(
                   child: Text(
-                    'Address Space',
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.w600),
+                    'Address space planner',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
                   ),
                 ),
                 TextButton.icon(
@@ -592,33 +614,51 @@ class _VisualPlannerState extends State<VisualPlanner> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             const Text(
-              'Choose an explicit pool. Inspect capacity, compare available blocks, and reserve locally.',
+              'Inspect address hierarchy and free space, then reserve a CIDR locally.',
               style: TextStyle(color: _muted),
             ),
+            const SizedBox(height: 6),
+            const Text(
+              'Connectivity is not collected: routes, gateways, DRGs and peering are not shown.',
+              style: TextStyle(color: _muted, fontSize: 12),
+            ),
             const SizedBox(height: 16),
-            _controls(math.max(0, width - 36)),
-            const SizedBox(height: 16),
-            _coverage(),
-            const SizedBox(height: 16),
-            if (width < 650) ...[
-              _hierarchy(),
-              const SizedBox(height: 16),
-              _workspace(wide: false),
-            ] else
+            if (rail)
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(width: wide ? 250 : 220, child: _hierarchy()),
+                  SizedBox(
+                    width: 300,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _controls(264),
+                        if (_result != null) ...[
+                          const SizedBox(height: 12),
+                          _hierarchy(),
+                        ],
+                      ],
+                    ),
+                  ),
                   const SizedBox(width: 16),
                   Expanded(child: _workspace(wide: wide)),
-                  if (wide && (_candidate != null || _inspected != null)) ...[
+                  if (wide && hasDetails) ...[
                     const SizedBox(width: 16),
                     SizedBox(width: 290, child: _panel(_details())),
                   ],
                 ],
-              ),
+              )
+            else ...[
+              _controls(math.max(0, width - 36)),
+              const SizedBox(height: 16),
+              _workspace(wide: false),
+              if (_result != null) ...[
+                const SizedBox(height: 16),
+                _hierarchy(),
+              ],
+            ],
           ],
         ),
       );
@@ -661,6 +701,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
   Widget _workspace({required bool wide}) {
     final result = _result;
     return Column(
+      key: _workspaceKey,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (_inspected != null && !wide)
@@ -672,7 +713,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
               label: Text('Inspect ${_inspected!.cidr}'),
             ),
           ),
-        if (result == null)
+        if (result == null) ...[
           _panel(
             const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -693,14 +734,18 @@ class _VisualPlannerState extends State<VisualPlanner> {
                 ),
               ],
             ),
-          )
-        else ...[
+          ),
+          const SizedBox(height: 12),
+          _hierarchy(),
+        ] else ...[
           _summary(result),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _addressMap(result),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           _recommendations(result, wide: wide),
         ],
+        const SizedBox(height: 12),
+        _coverage(),
       ],
     );
   }
@@ -717,8 +762,8 @@ class _VisualPlannerState extends State<VisualPlanner> {
           ),
           const SizedBox(height: 12),
           Wrap(
-            spacing: 24,
-            runSpacing: 12,
+            spacing: 14,
+            runSpacing: 8,
             children: [
               _stat('Total addresses', s.totalAddresses),
               _stat('Blocked addresses', s.blockedAddresses),
@@ -753,7 +798,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
   }
 
   Widget _stat(String label, BigInt count) => SizedBox(
-    width: 180,
+    width: 120,
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1235,7 +1280,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
           const Padding(
             padding: EdgeInsets.all(14),
             child: Text(
-              'Resource hierarchy',
+              'Address hierarchy',
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
           ),

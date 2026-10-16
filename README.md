@@ -138,8 +138,10 @@ Open **Planner**, explicitly choose a routing domain, and select an allocation o
 VCN pool. The hierarchy groups OCI VCN prefixes by resource identity and shows
 their known subnets. The address map highlights free intervals, blocked space,
 conflicts, and the selected recommendation. Zoom controls and keyboard-selectable
-alternatives support reviewing large pools. Connections and reachability are not
-inferred from CIDR containment.
+alternatives support reviewing large pools. Compact planning controls sit beside the main address map, with selected-network
+details adjacent on wide windows. The **Address hierarchy** shows membership and
+ancestry. Actual routes, gateways, DRGs and peering require a future observed
+connectivity view; CIDR containment alone does not establish connections.
 
 Choose a prefix length, or size an OCI IPv4 subnet from current/peak demand,
 an explicit growth percentage, and separate additional demand. For example,
@@ -184,31 +186,41 @@ In the app, open **Import → Discover from OCI CLI**:
    mode: API key or security token. Opening this dialog reads selection metadata;
    it does not make OCI requests.
 2. Select **Load scopes** to retrieve subscribed regions and accessible
-   compartments. Choose a READY region and a compartment, including the tenancy
-   root when appropriate. Manual region and compartment OCID entry is available
-   when IAM prevents scope enumeration.
+   compartments. Choose one or several READY regions, or **All READY subscribed regions**.
+   Independently choose one direct compartment or **All accessible compartments
+   and subcompartments**. Manual comma-separated regions and compartment OCID
+   entry remain available for narrow scopes when enumeration is unavailable.
 3. Enter the routing domain for connectivity and overlap checking, then select
    **Discover inventory**. Cancel stops collection and discards its result.
 4. Review the prefix count, validation errors, conflicts, coverage, and observation
    interval in the existing import preview. **Apply** commits the validated batch
    atomically to SQLite; closing the preview leaves inventory unchanged.
 
-Each run lists VCNs and subnets directly in one selected compartment and region,
-fetching all pages. Selecting a parent compartment or the tenancy root does not
-collect descendants. The subnet list is not restricted to VCNs in that compartment.
-These choices use the documented [VCN list](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/vcn/list.html)
-and [subnet list](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/subnet/list.html)
-scope and pagination options.
+Discovery reads each selected region/compartment pair, fetching all VCN and
+subnet pages. Single-compartment mode collects direct resources only. The
+all-compartments option freshly enumerates accessible active descendants from
+tenancy root and includes root once, collecting their networks across the chosen
+regions in one preview. All-region mode freshly selects READY subscriptions and
+reports non-READY exclusions. Each resource retains its actual region.
+
+Oracle documents [root subtree and ACCESSIBLE enumeration](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/iam/compartment/list.html),
+[region subscriptions](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/iam/region-subscription/list.html),
+and direct [VCN](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/vcn/list.html)
+and [subnet](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/subnet/list.html)
+resource calls. Accessible compartment visibility does not establish permission
+to list its networks or visibility of IAM-hidden resources. A failed required
+scope stops collection without an applicable partial bundle. Correct permissions
+or choose a narrower scope to retry.
 
 A successful empty list may have no CLI output. CIDR Atlas accepts this only for
 the known list commands and shows a scope warning when both resource lists are
-empty. Check the actual resource compartment when tenancy root is empty. Genuine
+empty. Review region, compartment mode and permissions; root can be empty in direct mode. Genuine
 malformed responses identify the failed step and expected structure without
 displaying raw response contents. This follows the installed CLI's
 [empty-list rendering behavior](https://github.com/oracle/oci-cli/blob/v3.94.1/src/oci_cli/cli_util.py#L893-L947).
 
 An empty live preview now shows **Discovery completed — no networks found** with
-scope guidance and **Choose another compartment or region**. No manual CIDR is
+scope guidance and the scope retry action. No manual CIDR is
 needed, and Apply stays disabled because there is nothing to save. Malformed data
 still shows its validation error once. Expand **Coverage and observation details**
 for provenance; the summary retains the relevant coverage warnings.
@@ -219,9 +231,10 @@ VCN's other subnets. An inaccessible or missing context VCN produces a visible
 coverage warning; it is not evidence that the VCN was deleted. Oracle exposes
 this individual lookup through [Get VCN](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/vcn/get.html).
 Required-list failures, malformed responses, cancellation, and timeouts prevent a
-partial discovery from reaching Apply. Requests have a 60-second deadline and a
-complete collection has a 180-second deadline, followed by bounded process
-cleanup.
+partial discovery from reaching Apply. Requests have a 60-second deadline. Complete collection is bounded to 180
+seconds for one selected pair, or 1800 seconds for broader modes, followed by
+bounded process cleanup. Progress shows the current scope; Cancel/Ctrl-C stops
+collection without applying it.
 
 The app reads allowlisted profile metadata and leaves private-key and token-file
 access to the OCI CLI process. It creates no credentials and opens no automatic
@@ -294,6 +307,16 @@ region, compartment OCID, and routing domain with your intended scope:
   --compartment-id ocid1.compartment.oc1..example \
   --routing-domain example-connected --apply
 
+# Multiple selected regions, all accessible compartments; preview only.
+./scripts/cidrctl --db /tmp/cidr-atlas-live.sqlite discover oci \
+  --profile EXAMPLE --region us-phoenix-1,us-ashburn-1 \
+  --all-compartments --routing-domain example-connected
+
+# All READY regions and accessible compartments/subcompartments; preview only.
+./scripts/cidrctl --db /tmp/cidr-atlas-live.sqlite discover oci \
+  --profile EXAMPLE --all-regions --all-compartments \
+  --routing-domain example-connected
+
 # Optional explicit paths and authentication override.
 ./scripts/cidrctl --db /tmp/cidr-atlas-live.sqlite discover oci \
   --profile EXAMPLE --region us-phoenix-1 \
@@ -304,8 +327,9 @@ region, compartment OCID, and routing domain with your intended scope:
 ```
 
 `--auth` accepts `api_key` or `security_token`; without it, authentication follows
-the selected profile's token metadata. All four scope options are
-required. A new discovery command collects a new observation, so its preview may
+the selected profile's token metadata. Profile and routing domain are required.
+Choose repeated/comma-separated `--region` or `--all-regions`, and
+`--compartment-id` or `--all-compartments`; each pair is mutually exclusive. A new discovery command collects a new observation, so its preview may
 differ from an earlier run. Progress goes to stderr; warnings and the preview go
 to stdout. Ctrl-C cancels collection before apply. A successful preview can create
 the selected local database file but writes no inventory or history records.

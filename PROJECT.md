@@ -14,28 +14,39 @@ Mac-first desktop application for managing OCI VCN/subnet CIDRs and planning non
 
 ## Current state
 
-The first source milestone is implemented: Flutter desktop workspace, exact CIDR engine, SQLite inventory/import/export, CLI, fictional samples, and Mac launch/build scripts. This Git repository is ready to be copied to `~/projects/cidr-atlas` and opened as the primary folder of a local Codex project. The cloud workspace cannot place files on the Mac or register that local project directly.
+Verified locally on macOS on 2026-10-15. The first milestone is implemented: Flutter desktop workspace, exact CIDR engine, SQLite inventory/import/export, CLI, fictional samples, and Mac launch/build scripts. The macOS GUI and standalone CLI build and run on this Mac. Continue the existing Flutter UI, pure Dart domain engine, and SQLite architecture.
 
-## Validation and remaining Mac checks
+## Local validation
 
-Checked in the Linux cloud environment with Dart 3.13.5 and Flutter 3.47.7 libraries:
+Toolchain: macOS 26.7.1 on Apple Silicon, Xcode 27.0 (27A266a) selected through the session's `DEVELOPER_DIR`, Flutter 3.47.7 (`abaf9c5237`), and Dart 3.13.5. The SDK is installed outside the repository; dependency lockfiles were restored unchanged.
 
 - Core: 31 tests passed; analyzer clean.
 - Data/imports: 44 tests passed; analyzer clean.
-- CLI: 10 integration tests passed; analyzer clean; native Linux compilation and smoke checks passed.
-- Flutter source and widget-test source: static Dart analysis passed. Seven widget tests are included but have not been executed.
-- macOS plist/XML, platform template placeholders, and shell syntax checked.
+- CLI: 10 integration tests passed; analyzer clean. CSV/JSON round trips and OCI bundle import were tested.
+- Flutter: 9 widget tests passed, covering 1100×740 and 1440×900 layouts; analyzer clean. Fixed layout overflows found by the original widget tests. Both changed Dart files are canonically formatted; `app.dart` also has substantial formatter reflow.
+- Nonmutating format checks passed for all three pure Dart packages.
+- `scripts/build_macos.sh` produced a 43.9 MB universal release app (`x86_64` and `arm64`). `scripts/build_cli.sh` produced a 6.1 MB native `arm64` executable.
+- Flutter migrated the Xcode project and scheme to Swift Package Manager and generated its Swift plugin registrant. All current plugins use Swift Package Manager, so the unused Podfile was removed; generated metadata and backups are ignored.
+- Local native and GUI reviews found no actionable issues. CodeRabbit CLI was unavailable, so no CodeRabbit analysis was run.
 
-A cloud approval review blocked Flutter setup because its command attempted cloud metadata access. That command was not retried. The macOS runner was assembled from the SDK's application templates without running Flutter. No macOS binary, native file-dialog verification, GUI render verification, signing, notarization, or GUI runtime testing has occurred. On the Mac, run the documented Flutter tests and native build, inspect the UI at 1100px and 1440px widths, test file import/export, and verify the app and CLI use the same database path.
+Earlier Linux checks established portable package behavior and a native Linux CLI build. The local results above now establish macOS build and runtime behavior.
 
-The local app is configured for ordinary direct distribution with App Sandbox disabled, allowing its SQLite store to share the CLI default path. App Store sandboxing and release hardening require separate design/verification. No OCI credentials or live connections are used.
+## Native smoke checks and remaining limits
 
-## Open in Codex on macOS
+The release app launched with an empty inventory and rendered at both 1440px and 1100px widths. The wide layout uses the details pane; the narrow layout opens a details dialog. A native CSV file dialog loaded six fictional prefixes into a preview without writing them. Applying the preview made the same six records visible through the CLI's default database. A native JSON save produced an exact six-record export, and quitting and reopening the app preserved all six records.
 
-Extract the project to a normal development folder, for example `~/projects/cidr-atlas`. Add that folder to a local project in the ChatGPT desktop app's Codex experience. The primary project folder should be this directory so Codex discovers `AGENTS.md` and the Git repository. Ask Codex to read this file and verify the macOS build.
+The app and CLI share `~/Library/Application Support/cidr_atlas/inventory.sqlite`. After checking that the smoke database contained exactly the six fictional records, it was moved to a temporary backup outside the repository. The app was reopened and the CLI confirmed that the default inventory is empty again.
 
-Initial continuation prompt:
+Native CSV save, the complete OCI JSON GUI workflow, and file-dialog cancellation paths still need explicit checks. CLI coverage does not establish those native GUI paths. The local app has App Sandbox disabled to share the CLI database path. Signing is ad hoc for local execution only; no Developer ID signing, notarization, or installer has been produced. App Store sandboxing and distribution hardening remain separate work.
 
-> Read AGENTS.md and PROJECT.md. Verify the Flutter toolchain and Xcode on this Mac, resolve dependencies, run the tests, then build and launch the macOS app. Fix any macOS-specific issues and update the validation notes. Continue the existing Flutter/Dart architecture.
+No OCI credentials were read and no live OCI access occurred during this validation. Current imports remain offline. iOS, Windows, and Linux GUI releases remain future milestones.
 
-This is a local source project. No remote GitHub repository or hosted service is created automatically.
+## Requested next action
+
+Add read-only OCI CLI integration using an existing local profile, with region and compartment selection. This feature is requested but has not been designed or implemented. Validate the collection commands against official OCI documentation and the installed CLI before implementation; preserve import preview, atomic apply, planning fields, routing-domain scope, and incomplete-discovery warnings.
+
+Publish the source to a private GitHub repository named `cidr-atlas` under the account associated with `sergio.farfan@gmail.com`. Repository creation and publication are pending verification in this session.
+
+Continuation prompt:
+
+> Read AGENTS.md, PROJECT.md, docs/CONTRACT.md, and docs/architecture.md. Continue the Flutter/Dart/SQLite implementation. Confirm the default inventory is empty, finish the remaining native file-dialog checks, and design the requested read-only OCI CLI workflow using official documentation and the installed CLI. Verify GitHub account ownership and private repository publication before recording a remote URL. Keep credentials, customer inventories, generated builds, and machine-specific SDK paths out of Git.

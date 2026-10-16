@@ -1,5 +1,7 @@
 .dart_tool/
 .packages
+.flutter-plugins
+.flutter-plugins-dependencies
 build/
 coverage/
 .DS_Store
@@ -12,3 +14,5 @@ Pods/
 Flutter/ephemeral/
 xcuserdata/
 *.xcuserstate
+*.pbxproj.backup
+*.xcscheme.backup

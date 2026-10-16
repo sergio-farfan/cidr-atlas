@@ -5,9 +5,10 @@ reservations, import discovered networks, and review conflicts within explicit
 routing domains. The Flutter app and `cidrctl` CLI use the same pure Dart network
 rules and local SQLite inventory.
 
-This is an initial source release. It is not a signed or notarized macOS download.
-The graphical macOS application must be built and verified on a Mac with Xcode;
-a Linux development environment cannot build or launch a macOS application.
+This is an initial source release. The macOS application and CLI have been built
+locally on Apple Silicon; see `PROJECT.md` for verification results and remaining
+native UI checks. Distribution signing, notarization, and installer creation are
+separate release work.
 
 ## Open as a Codex project
 
@@ -25,13 +26,26 @@ Requirements:
 - Xcode, with its first-launch setup and command line developer tools configured.
 - Any additional macOS dependencies reported by `flutter doctor -v`.
 
-Install Flutter and Xcode using their official installation instructions, then
-confirm the toolchain:
+Use the official [Flutter installation](https://docs.flutter.dev/install/manual)
+and [macOS setup](https://docs.flutter.dev/platform-integration/macos/setup)
+instructions, then confirm the toolchain:
 
 ```bash
 flutter doctor -v
-flutter config --enable-macos-desktop
+flutter devices
 ```
+
+If Xcode is installed but the active developer directory points to Command Line
+Tools, select Xcode for the current terminal session:
+
+```bash
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+xcodebuild -version
+```
+
+Apple documents this session override in `man xcode-select`. The current native
+plugins use [Flutter's Swift Package Manager integration](https://docs.flutter.dev/packages-and-plugins/swift-package-manager/for-app-developers);
+CocoaPods is not required for this dependency set.
 
 From this directory:
 

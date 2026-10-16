@@ -4,6 +4,7 @@ import 'package:cidr_data/cidr_data.dart';
 import 'package:cidr_core/cidr_core.dart';
 import 'package:cidr_atlas/dialogs.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -19,8 +20,12 @@ void main() {
     store.close();
   });
 
-  Future<void> workspace(WidgetTester tester, {double width = 1440}) async {
-    tester.view.physicalSize = Size(width, 1000);
+  Future<void> workspace(
+    WidgetTester tester, {
+    double width = 1440,
+    double height = 900,
+  }) async {
+    tester.view.physicalSize = Size(width, height);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -31,19 +36,68 @@ void main() {
   testWidgets('new inventory starts empty and sample data requires a click', (
     tester,
   ) async {
-    await workspace(tester, width: 1100);
+    await workspace(tester, width: 1100, height: 740);
     expect(find.text('Build your address map'), findsOneWidget);
     expect(find.text('Production VCN'), findsNothing);
     expect(controller.records, isEmpty);
     expect(tester.takeException(), isNull);
 
+    await tester.ensureVisible(find.text('Explore with fictional sample data'));
     await tester.tap(find.text('Explore with fictional sample data'));
     await tester.pumpAndSettle();
     expect(controller.records.length, 6);
     expect(find.text('Build your address map'), findsNothing);
+    await tester.scrollUntilVisible(
+      find.text('Production VCN'),
+      200,
+      scrollable: find.byType(Scrollable).last,
+    );
     expect(find.text('Production VCN'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  for (final size in [const Size(1100, 740), const Size(1440, 900)]) {
+    testWidgets(
+      'inventory selection and filters remain usable at ${size.width.toInt()}x${size.height.toInt()}',
+      (tester) async {
+        controller.loadDemo();
+        await workspace(tester, width: size.width, height: size.height);
+        expect(tester.takeException(), isNull);
+
+        await tester.scrollUntilVisible(
+          find.text('Production VCN'),
+          200,
+          scrollable: find.byType(Scrollable).last,
+        );
+        await tester.tap(find.text('Production VCN'));
+        await tester.pump(kDoubleTapTimeout);
+        await tester.pumpAndSettle();
+        expect(controller.selected?.id, 'demo-vcn');
+        expect(find.text('PREFIX DETAILS'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        if (size.width == 1100) {
+          expect(find.byType(Dialog), findsOneWidget);
+          await tester.tapAt(const Offset(1090, 730));
+          await tester.pumpAndSettle();
+          expect(find.byType(Dialog), findsNothing);
+        } else {
+          expect(find.byType(Dialog), findsNothing);
+        }
+
+        await tester.tap(find.byType(DropdownButtonFormField<PrefixStatus?>));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Reserved').last);
+        await tester.pumpAndSettle();
+        expect(controller.status, PrefixStatus.reserved);
+        expect(find.text('AI platform reservation'), findsOneWidget);
+        expect(
+          find.text('Production VCN'),
+          size.width == 1100 ? findsNothing : findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 
   testWidgets(
     'editor rejects a CIDR with host bits and keeps inventory empty',

@@ -2,7 +2,7 @@
 
 Author: Sergio Farfan <sergio.farfan@gmail.com>
 Date: 2026-10-15
-Status: Proposed scope for review; implementation has not started
+Status: Approved by Sergio Farfan on 2026-10-15; implementation in progress
 
 ## Intent
 

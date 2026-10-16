@@ -1,0 +1,36 @@
+{
+  "metadata": {
+    "tenancy": "ocid1.tenancy.oc1..FICTIONALEXAMPLETENANCY",
+    "region": "us-phoenix-1",
+    "collectedAt": "2026-10-15T18:00:00Z",
+    "coverage": "FICTIONAL DEMONSTRATION ONLY. One compartment; VCNs and subnets only. This is not a complete tenancy discovery."
+  },
+  "vcns": [
+    {
+      "id": "ocid1.vcn.oc1.phx.FICTIONALEXAMPLEVCN",
+      "display-name": "fictional-demo-vcn",
+      "compartment-id": "ocid1.compartment.oc1..FICTIONALNETWORKING",
+      "cidr-block": "10.80.0.0/20",
+      "cidr-blocks": ["10.80.0.0/20", "10.81.0.0/20"],
+      "lifecycle-state": "AVAILABLE"
+    }
+  ],
+  "subnets": [
+    {
+      "id": "ocid1.subnet.oc1.phx.FICTIONALDEMOAPP",
+      "display-name": "fictional-app-subnet",
+      "compartment-id": "ocid1.compartment.oc1..FICTIONALNETWORKING",
+      "vcn-id": "ocid1.vcn.oc1.phx.FICTIONALEXAMPLEVCN",
+      "cidr-block": "10.80.1.0/24",
+      "lifecycle-state": "AVAILABLE"
+    },
+    {
+      "id": "ocid1.subnet.oc1.phx.FICTIONALDEMODB",
+      "display-name": "fictional-db-subnet",
+      "compartment-id": "ocid1.compartment.oc1..FICTIONALNETWORKING",
+      "vcn-id": "ocid1.vcn.oc1.phx.FICTIONALEXAMPLEVCN",
+      "cidr-block": "10.81.1.0/24",
+      "lifecycle-state": "AVAILABLE"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+# Flutter project metadata. Native macOS verification must run on a Mac.
+version:
+  revision: "abaf9c523780a608bd46686fd5e53740a07077f8"
+  channel: "stable"
+project_type: app
+migration:
+  platforms:
+    - platform: root
+      create_revision: abaf9c523780a608bd46686fd5e53740a07077f8
+      base_revision: abaf9c523780a608bd46686fd5e53740a07077f8
+    - platform: macos
+      create_revision: abaf9c523780a608bd46686fd5e53740a07077f8
+      base_revision: abaf9c523780a608bd46686fd5e53740a07077f8
+  unmanaged_files:
+    - 'lib/main.dart'
+    - 'macos/Runner.xcodeproj/project.pbxproj'

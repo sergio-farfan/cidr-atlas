@@ -1,0 +1,14 @@
+.dart_tool/
+.packages
+build/
+coverage/
+.DS_Store
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.log
+Pods/
+Flutter/ephemeral/
+xcuserdata/
+*.xcuserstate

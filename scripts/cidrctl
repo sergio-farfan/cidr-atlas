@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+invocation_directory="$PWD"
+dart_executable="${DART_BIN:-$(command -v dart || true)}"
+if [[ -z "$dart_executable" || ! -x "$dart_executable" ]]; then
+  echo "Dart was not found. Add the Flutter/Dart SDK to PATH or set DART_BIN." >&2
+  exit 1
+fi
+
+cd "$project_root/packages/cidr_cli"
+if [[ ! -f .dart_tool/package_config.json ]]; then
+  "$dart_executable" pub get >&2
+fi
+cd "$invocation_directory"
+exec "$dart_executable" \
+  --packages="$project_root/packages/cidr_cli/.dart_tool/package_config.json" \
+  "$project_root/packages/cidr_cli/bin/cidrctl.dart" "$@"

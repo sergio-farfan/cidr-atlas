@@ -1,0 +1,22 @@
+name: cidr_atlas
+description: Local-first OCI network address planning for macOS.
+publish_to: none
+version: 0.1.0+1
+environment:
+  sdk: '>=3.13.0 <4.0.0'
+  flutter: '>=3.47.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  cidr_core:
+    path: ../../packages/cidr_core
+  cidr_data:
+    path: ../../packages/cidr_data
+  file_selector: ^1.0.3
+  path_provider: ^2.1.5
+  path: ^1.9.1
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+flutter:
+  uses-material-design: true

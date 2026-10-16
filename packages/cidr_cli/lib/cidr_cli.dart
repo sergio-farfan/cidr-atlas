@@ -15,7 +15,7 @@ import 'package:cidr_oci/cidr_oci.dart';
 
 import 'src/recommendation.dart';
 
-const _version = '0.2.0';
+const _version = '0.2.1';
 
 /// Runs desktop commands, including asynchronous OCI discovery.
 Future<int> runCidrctlAsync(
@@ -407,6 +407,51 @@ void _usage(ArgParser parser, StringSink output, {String? command}) {
         '${command == 'discover' ? 'oci ' : ''}[options]');
   }
   output.writeln(parser.usage);
+  output.writeln();
+  output.writeln(switch (command) {
+    'discover' =>
+      '''No manual CIDR is required: OCI supplies existing VCN/subnet CIDRs.
+Choose an existing profile, resource region, direct compartment and routing domain.
+An empty result has nothing to apply; check the region and child compartment.
+Selecting tenancy root or a parent does not collect child-compartment resources.
+Example (fictional scope; preview only):
+  cidrctl discover oci --profile EXAMPLE --region us-phoenix-1 --compartment-id ocid1.compartment.oc1..example --routing-domain fictional-connected
+Add --apply only after reviewing the intended scope and preview.''',
+    'import' =>
+      '''Reads CIDRs from the file; do not enter a manual CIDR for import.
+CSV and Atlas backups retain their routing domains. OCI JSON requires a domain.
+Example (preview only):
+  cidrctl import csv --file examples/fictional_inventory.csv
+  cidrctl import oci --file examples/fictional_oci_bundle.json --routing-domain fictional-connected
+Apply requires a nonempty valid preview. An empty file has nothing to save.
+Add --apply only after review; absent existing records are retained.''',
+    'recommend' =>
+      '''The pool is the boundary to search; the prefix is the requested new size.
+Use --parent ID when selecting an existing inventory pool.
+Examples (fictional boundary; preview only):
+  cidrctl recommend --pool 10.64.0.0/16 --routing-domain fictional-connected --prefix 24
+  cidrctl recommend --pool 10.64.0.0/16 --routing-domain fictional-connected --addresses 100 --growth-percent 20 --additional 4 --policy oci_ipv4 --kind subnet
+The second example needs 124 assignable addresses and selects an OCI /25 (125 assignable).
+Use --basis peak for an already planned peak and explicitly choose growth, including zero.
+Availability is limited to this inventory/domain. Review coverage before reserving.
+Add --apply --name NAME to reserve the first ranked candidate locally.''',
+    'check' ||
+    'reserve' =>
+      '''Enter a full canonical network CIDR, for example 10.64.0.0/24.
+A /24 has 256 total IPv4 addresses; provider assignable capacity is separate.
+Use the same routing-domain name for connected networks and --parent ID for approved containment.
+Example:
+  cidrctl check 10.64.0.0/24 --routing-domain fictional-connected
+  cidrctl reserve 10.64.0.0/24 --name fictional-subnet --kind subnet --routing-domain fictional-connected
+Reserve saves a local record; it does not provision an OCI network.''',
+    null => '''When is a prefix needed?
+  discover/import: CIDRs come from OCI or the inventory file.
+  check/reserve: enter a full CIDR such as 10.64.0.0/24.
+  recommend: select a pool, then --prefix 24 or --addresses with explicit growth.
+Use cidrctl <command> --help for guidance and fictional examples.
+Use --db PATH for a separate local inventory. Imports/recommendations preview by default.''',
+    _ => 'Use cidrctl --help to choose a workflow.',
+  });
 }
 
 void _requireRest(ArgResults command, int count) {

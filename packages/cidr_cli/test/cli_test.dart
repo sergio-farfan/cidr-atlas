@@ -28,6 +28,22 @@ void main() {
     return (code: code, output: '$output', error: '$error');
   }
 
+  test('help explains prefix inputs and examples without creating an inventory',
+      () {
+    final discovery = run(['discover', 'oci', '--help']);
+    expect(discovery.code, 0);
+    expect(discovery.output, contains('No manual CIDR is required'));
+    expect(discovery.output, contains('child compartment'));
+    final recommendation = run(['recommend', '--help']);
+    expect(recommendation.output, contains('--pool 10.64.0.0/16'));
+    expect(recommendation.output, contains('--prefix 24'));
+    expect(recommendation.output,
+        contains('--addresses 100 --growth-percent 20 --additional 4'));
+    expect(run(['import', '--help']).output,
+        contains('Reads CIDRs from the file'));
+    expect(File(database).existsSync(), isFalse);
+  });
+
   test('reserve persists a prefix and list emits a portable JSON backup', () {
     final result = run([
       'reserve',

@@ -35,7 +35,9 @@ done
 
 release_dir="$project_root/build/releases"
 mkdir -p "$release_dir"
-asset_name="CIDR-Atlas-$version-macos-universal.dmg"
+asset_name="CIDR-Atlas-$version.dmg"
+# Stable-name copy for the releases/latest/download link; identical bytes.
+stable_name="CIDR-Atlas.dmg"
 image_path="$release_dir/$asset_name"
 staging_dir="$(mktemp -d "$project_root/build/cidr-atlas-dmg.XXXXXX")"
 mounted=false
@@ -87,6 +89,9 @@ mounted=false
   cd "$release_dir"
   /usr/bin/shasum -a 256 "$asset_name" > "$asset_name.sha256"
   /usr/bin/shasum -a 256 -c "$asset_name.sha256"
+  /bin/cp -f "$asset_name" "$stable_name"
+  /usr/bin/cmp "$asset_name" "$stable_name"
 )
 echo "Verified disk image: $image_path"
 echo "SHA-256 checksum: $image_path.sha256"
+echo "Stable-name copy: $release_dir/$stable_name"

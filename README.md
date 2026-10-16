@@ -1,18 +1,118 @@
+<p align="center">
+  <img src="https://img.shields.io/badge/platform-macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS">
+  <img src="https://img.shields.io/badge/flutter-3.47-02569B?style=flat-square&logo=flutter&logoColor=white" alt="Flutter 3.47">
+  <img src="https://img.shields.io/badge/dart-3.13-0175C2?style=flat-square&logo=dart&logoColor=white" alt="Dart 3.13">
+  <img src="https://img.shields.io/badge/storage-SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite">
+  <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License">
+</p>
+
 # CIDR Atlas
 
 Author: Sergio Farfan <sergio.farfan@gmail.com>
 
-A local, macOS-first register for OCI VCN and subnet CIDRs. Track allocations and
-reservations, import discovered networks, and review conflicts within explicit
-routing domains. The Flutter app and `cidrctl` CLI use the same pure Dart network
-rules and local SQLite inventory.
+**Local-first CIDR inventory and allocation planning for OCI networks, with a macOS app and a desktop CLI.**
 
-The macOS application and CLI have been built locally on Apple Silicon. Import
-live OCI inventory through an existing CLI profile, or use offline CSV and JSON
-files. Both paths provide a preview before an atomic local import. See
-`PROJECT.md` for verification results and remaining native checks.
+An enterprise OCI estate spreads VCNs and subnets across regions, compartments and
+connected networks, and the question "is this range free?" usually means checking a
+spreadsheet, the console and somebody's memory. CIDR Atlas keeps one local register of
+allocations, reservations and discovered networks, checks conflicts inside explicit
+routing domains, and recommends free space with exact IPv4/IPv6 arithmetic. The
+Flutter app and the `cidrctl` CLI share the same pure Dart rules and the same local
+SQLite inventory.
 
-## Development workspace
+> **0.4.0 is prepared and not yet published.** The latest published preview is
+> [0.3.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.3.0). See the
+> [CHANGELOG](CHANGELOG.md) for what 0.4.0 adds and [PROJECT.md](PROJECT.md) for
+> completed and outstanding verification.
+
+## Download
+
+Releases are on the private repository's
+[releases page](https://github.com/sergio-farfan/cidr-atlas/releases); repository
+access is required to download the assets. Each release provides a universal disk
+image for Apple silicon and Intel and its SHA-256 checksum. From 0.4.0 the assets are
+named `CIDR-Atlas-X.Y.Z.dmg` and `CIDR-Atlas-X.Y.Z.dmg.sha256`, plus an identical
+stable-name `CIDR-Atlas.dmg`; 0.1.0 to 0.3.0 use `CIDR-Atlas-X.Y.Z-macos-universal.dmg`.
+
+Open the disk image and drag **CIDR Atlas** to **Applications**. Quit a running copy
+before replacing it. Upgrades keep the local inventory; new installations start empty.
+
+<!-- UNSIGNED-NOTE: remove this block once notarized builds ship. -->
+> CIDR Atlas releases are **ad-hoc signed and not notarized**. After verifying the
+> download and its checksum and attempting to open it, macOS may require **System
+> Settings → Privacy & Security → Open Anyway**. See
+> [Apple's first-launch instructions](https://support.apple.com/en-lamr/102445).
+> Developer ID signing and notarization are optional future improvements.
+
+Prefer to build it yourself? See [Build from source](#build-from-source).
+
+## Why CIDR Atlas?
+
+**Routing domains, not tenancies, decide conflicts.** Networks joined by a DRG, VPN,
+FastConnect or another cloud share an address space; isolated ones may reuse ranges.
+Every record carries an explicit routing domain, and overlap checks stay inside it.
+
+**Numerical containment is not hierarchy.** A subnet belongs to a VCN because you said
+so or because OCI says so (matching VCN/subnet identity), never just because its range
+falls inside another one. Unrelated overlaps are reported as conflicts.
+
+**Discovery never deletes your plan.** OCI refreshes update observed fields, keep your
+owner, notes, status and parent, and never retire or free a network that a partial
+scan did not return. Every import is previewed, validated and committed atomically.
+
+**Local and offline by default.** One SQLite file on your Mac, no account, no service,
+no telemetry. OCI is contacted only when you start discovery, through your existing OCI
+CLI profile, with read-only requests.
+
+## Features
+
+- **Inventory** of allocations, VCNs and subnets with routing domain, status, owner,
+  environment, notes and OCI identity; multiple CIDRs per VCN are separate records.
+- **Conflict review** scoped by routing domain, with explicit-parent and OCI-identity
+  rules, and reviewable discovered conflicts.
+- **Visual address planner** with free/blocked map, exact slot totals, bounded
+  recommendations and OCI IPv4 demand sizing (`/16`–`/30`, three reserved addresses).
+- **CIDR inspector** for masks, ranges, exact counts and containing supernets, IPv4 and
+  IPv6.
+- **Live OCI discovery** across one, several or all READY regions and one or all
+  accessible compartments, with a centered progress panel, cancellation, collection
+  limits and a one-click retry across all accessible compartments.
+- **Offline imports** of CSV, CIDR Atlas JSON backups and OCI JSON bundles through the
+  same preview and atomic apply.
+- **Safe exports and clearing**: JSON/CSV export with formula escaping, and Clear
+  inventory (everything or one routing domain) behind an explicit confirmation.
+- **History** of local changes and import provenance.
+- **`cidrctl` CLI** for list, check, reserve, recommend, import, discover, export,
+  history and clear, with stable exit codes for scripting.
+
+## Releases & Roadmap
+
+Full details per release are in the [CHANGELOG](CHANGELOG.md); disk images are on the
+[releases page](https://github.com/sergio-farfan/cidr-atlas/releases).
+
+| Version | Date | Highlights |
+|---------|------|------------|
+| 0.4.0 | Prepared, unpublished | Review remediation, safer imports and exports, region canonicalization, OCI retries and collection limits, centered discovery progress, Clear inventory |
+| [0.3.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.3.0) | 2026-10-15 | Multi-region and all-compartment discovery, compact planner layout |
+| [0.2.1](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.1) | 2026-10-15 | Offline help, guidance and fictional examples |
+| [0.2.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.0) | 2026-10-15 | Visual address planner and CIDR inspector |
+| [0.1.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.1.0) | 2026-10-15 | Initial macOS preview: inventory, OCI discovery, imports, CLI |
+
+### Planned
+
+Unordered and undated:
+
+- **IPAM planning features** from the [Infoblox comparison](docs/design/2026-10-16-ipam-feature-assessment.md):
+  a `cidrctl conflicts` gate, `recommend --count/--exclude`, OCI rule checks and OKE
+  CIDR checks first.
+- **Observed connectivity**: routes, gateways, DRGs and peering as a separate model;
+  CIDR containment does not establish connectivity.
+- **Discovery resilience**: an opt-in mode that records denied compartments as
+  unobserved instead of stopping the collection.
+- **Other platforms**: iOS, then Windows and Linux graphical releases.
+- **Optional signing upgrade**: Developer ID signing and notarization.
+
+## Build from source
 
 Clone the private [source repository](https://github.com/sergio-farfan/cidr-atlas)
 to `~/projects/git/cidr-atlas` on your Mac and open the folder in your development
@@ -20,9 +120,7 @@ environment. `AGENTS.md` defines project conventions, `PROJECT.md` records
 implementation status and verification, and `docs/` contains the architecture
 and API contracts.
 
-## Start on your Mac
-
-Requirements:
+### Prerequisites
 
 - macOS with Flutter stable 3.47 or newer (source checks used Flutter 3.47.7 / Dart 3.13.5).
 - Xcode, with its first-launch setup and command line developer tools configured.
@@ -49,6 +147,8 @@ Apple documents this session override in `man xcode-select`. The current native
 plugins use [Flutter's Swift Package Manager integration](https://docs.flutter.dev/packages-and-plugins/swift-package-manager/for-app-developers);
 CocoaPods is not required for this dependency set.
 
+### Run and build
+
 From this directory:
 
 ```bash
@@ -62,45 +162,23 @@ your PATH, `~/development/flutter/bin/flutter`, or `~/flutter/bin/flutter`.
 `FLUTTER_BIN` can specify another Flutter executable. The launcher does not
 install system software.
 
-To produce a local release build:
+To produce a local release build and disk image:
 
 ```bash
 ./scripts/build_macos.sh
+./scripts/build_dmg.sh --skip-build
 ```
 
-The build output is `apps/cidr_atlas/build/macos/Build/Products/Release/`.
-
-## macOS releases
-
-The private repository's [v0.3.0 release page](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.3.0)
-provides the [universal macOS DMG](https://github.com/sergio-farfan/cidr-atlas/releases/download/v0.3.0/CIDR-Atlas-0.3.0-macos-universal.dmg)
-and [SHA-256 checksum](https://github.com/sergio-farfan/cidr-atlas/releases/download/v0.3.0/CIDR-Atlas-0.3.0-macos-universal.dmg.sha256).
-Repository access is required to download private release assets.
-
-Build the disk image on a Mac with the requirements above:
-
-```bash
-./scripts/build_dmg.sh
-```
-
-The script builds the app, checks that it contains both `arm64` and `x86_64`
-architectures, creates a compressed DMG, verifies and mounts it, checks its
-contents, then writes a SHA-256 checksum. Use `--skip-build` only when packaging
-an existing release build. Output is written under `build/releases/`:
-
-```text
-CIDR-Atlas-0.3.0-macos-universal.dmg
-CIDR-Atlas-0.3.0-macos-universal.dmg.sha256
-```
-
-The image contains the app, an Applications shortcut, installation instructions,
-and third-party notices. Drag the app to Applications and eject the image. This
-preview build uses an ad hoc signature; it has no Developer ID signature or Apple
-notarization ticket, so macOS may require explicit approval to open it. Packaging
-does not establish notarization. Apple documents disk images in the
-[Disk Utility guide](https://support.apple.com/guide/disk-utility/create-a-disk-image-dskutl11888/mac);
-the script's command options are checked against the installed `hdiutil` tools.
-The standalone CLI is built separately with `scripts/build_cli.sh`.
+The app is written to `apps/cidr_atlas/build/macos/Build/Products/Release/`. The DMG
+script checks that the app contains both `arm64` and `x86_64`, verifies its signature,
+creates a compressed image, verifies and mounts it read-only, checks its contents, and
+writes a SHA-256 checksum and the stable-name copy under `build/releases/`. Without
+`--skip-build` it builds the app first. The image contains the app, an Applications
+shortcut, installation instructions and third-party notices. Apple documents disk
+images in the
+[Disk Utility guide](https://support.apple.com/guide/disk-utility/create-a-disk-image-dskutl11888/mac).
+The standalone CLI is built separately with `scripts/build_cli.sh`. The release
+procedure is in [docs/releasing.md](docs/releasing.md).
 
 ## First use
 
@@ -585,7 +663,11 @@ back to the bundle's time).
 - Keep independent backups of important inventory. Export JSON for portable
   backups, and protect exported files according to your network-data policy.
 
-## Development
+## Contributing and verification
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup and conventions, `AGENTS.md` for the
+binding project rules, and [docs/releasing.md](docs/releasing.md) for the release
+procedure. Each package is checked on its own:
 
 ```bash
 cd packages/cidr_core && dart pub get && dart test
@@ -600,4 +682,20 @@ package directories. The shared engine and CLI are portable Dart. iOS, Windows,
 and Linux graphical releases and packaging remain future milestones.
 
 See `docs/architecture.md` for component boundaries and
-`docs/CONTRACT.md` for the implementation API contract.
+`docs/CONTRACT.md` for the implementation API contract. Report security issues as
+described in [SECURITY.md](SECURITY.md).
+
+## Uninstall
+
+Quit the app, then remove it and, only if you no longer need it, the local inventory:
+
+```bash
+rm -rf "/Applications/CIDR Atlas.app"
+# Optional: deletes every local record. Export a backup first.
+rm -rf "$HOME/Library/Application Support/cidr_atlas"
+```
+
+## License
+
+[MIT](LICENSE) — Sergio Farfan (sergio.farfan@gmail.com). Third-party notices are in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

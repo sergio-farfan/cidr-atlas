@@ -174,10 +174,22 @@ under the stricter lint configuration. Tests use fictional runners, isolated
 temporary or memory stores and a fictional `HOME`; no live tenancy was collected,
 no OCI configuration was read and the default inventory was not opened. A string
 comparison on this Mac during the remediation confirmed that the shared default path equals the v0.3.0
-app path. No native app, CLI executable or DMG was built from the remediated tree,
-so native behavior (file dialogs, the shared database at runtime, packaging) has
-not been re-verified. The Windows branches of path canonicalization and default
-paths have not been run.
+app path. The Windows branches of path canonicalization and default paths have
+not been run.
+
+Native 0.4.0 build (unpublished): a clean release build of the app (0.4.0, build
+5, arm64 and x86_64, ad hoc signed, strict deep signature verification) and the
+`cidrctl` executable were built on Apple Silicon from the tree that includes the
+clear-inventory and discovery-progress changes. `build_dmg.sh --skip-build`
+produced `CIDR-Atlas-0.4.0.dmg`, its SHA-256 file and the identical stable-name
+`CIDR-Atlas.dmg`, passing both architecture checks, signature integrity, image
+verification, read-only mounting, contents and checksum. An end-to-end run of the
+compiled CLI on scratch databases (94 checks) found two gaps, both fixed and
+re-checked on the rebuilt binary. A copy of a v0.3.0 inventory read, listed and
+round-tripped through backup and restore with identical records, and launching the
+app left the original database unchanged. The new dialogs (centred progress panel,
+Clear inventory, all-compartments retry) are covered by widget tests; hands-on
+native checks of them are outstanding.
 
 v0.3.0 release verification (the last published release):
 
@@ -246,9 +258,9 @@ data and CLI) are lower than the lockfiles resolve (>=3.11.0); raising them to
 
 ## Next actions
 
-Review and commit the remediation and the clear-inventory/discovery-progress
-changes, then build, natively verify (including the centred progress panel and
-the Clear inventory dialog on macOS) and publish a release that includes them. Decisions recorded in the remediation plan:
+Check the centred progress panel, Clear inventory and the all-compartments retry
+in the native 0.4.0 build, then publish 0.4.0 following
+[docs/releasing.md](docs/releasing.md). Add the light/dark/system theme setting. Decisions recorded in the remediation plan:
 
 - All-compartments mode: continue past a compartment that denies network listing
   and record it as unobserved coverage, instead of failing the whole collection

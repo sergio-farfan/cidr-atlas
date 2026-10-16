@@ -1,0 +1,82 @@
+# CIDR Atlas
+# Issue form for bug reports.
+# Author: Sergio Farfan <sergio.farfan@gmail.com>
+
+name: Bug report
+description: Report incorrect behavior, a wrong CIDR result, or a crash.
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Use fictional values throughout (for example 10.20.0.0/16, a
+        made-up compartment name, a shortened placeholder OCID). Do not paste
+        real tenancy data, OCIDs, profile contents, keys or customer metadata.
+        Report security problems privately as described in SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: CIDR Atlas version
+      description: The version in the app header (for example v0.4.0) or the output of `cidrctl --version`.
+      placeholder: v0.4.0
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac
+      description: macOS version, and Apple silicon or Intel.
+      placeholder: macOS 26.0, Apple silicon
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - App
+        - CLI
+        - OCI discovery
+        - Import/export
+        - Planner
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: >-
+        Start from an empty or fictional inventory where possible (for example
+        `cidrctl --db ~/tmp/repro.sqlite ...` or a file from `examples/`).
+        Include the commands or clicks and any fictional input file content.
+      placeholder: |
+        1. cidrctl --db ~/tmp/repro.sqlite import csv --file examples/fictional_inventory.csv --apply
+        2. cidrctl --db ~/tmp/repro.sqlite check 10.64.0.0/24
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead, including error text, exit code (CLI) or a screenshot with fictional data.
+    validations:
+      required: true
+  - type: checkboxes
+    id: fictional-data
+    attributes:
+      label: Data check
+      description: >-
+        Issues are visible to everyone with access to the repository. Replace
+        real tenancy and compartment names, OCIDs, IP plans, OCI CLI profile
+        contents, API keys, tokens, credentials and customer metadata with
+        fictional values before submitting.
+      options:
+        - label: Everything in this report uses fictional values; it contains no real tenancy data, OCIDs, keys, tokens or customer metadata.
+          required: true

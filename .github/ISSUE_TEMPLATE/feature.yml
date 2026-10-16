@@ -1,0 +1,34 @@
+# CIDR Atlas
+# Issue form for feature requests.
+# Author: Sergio Farfan <sergio.farfan@gmail.com>
+
+name: Feature request
+description: Suggest a change that helps OCI address planning or inventory work.
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Describe the need with fictional values only. Do not paste real tenancy
+        data, OCIDs, credentials or customer metadata.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, who does it help, and what is the current workaround?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: The smallest useful change, and whether it belongs in the app, the CLI, or both.
+    validations:
+      required: true
+  - type: textarea
+    id: planning-context
+    attributes:
+      label: OCI and CIDR planning context
+      description: >-
+        Relevant routing domains, VCN/subnet layout, IPv4 or IPv6, regions and
+        compartments, import sources or discovery scope, using fictional
+        examples such as 10.20.0.0/16 split into /24 subnets.

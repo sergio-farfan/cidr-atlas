@@ -1,0 +1,5 @@
+# CIDR Atlas
+# Issue template chooser configuration: structured forms only.
+# Author: Sergio Farfan <sergio.farfan@gmail.com>
+
+blank_issues_enabled: false

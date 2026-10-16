@@ -124,6 +124,23 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('compact desktop keeps inputs beside a scroll-accessible map', (
+    tester,
+  ) async {
+    // A 1100x750 app leaves this space after its sidebar, header and footer.
+    await showPlanner(tester, size: const Size(898, 576));
+    await plan(tester);
+    await tester.ensureVisible(find.byType(InteractiveViewer));
+    await tester.pumpAndSettle();
+    final map = tester.getRect(find.byType(InteractiveViewer));
+    final inputs = tester.getRect(find.byKey(const ValueKey('planner-domain')));
+    expect(inputs.right, lessThan(map.left));
+    expect(map.width, greaterThanOrEqualTo(500));
+    expect(map.top, greaterThanOrEqualTo(0));
+    expect(map.bottom, lessThanOrEqualTo(576));
+    expect(tester.takeException(), isNull);
+  });
+
   for (final size in [const Size(390, 700), const Size(780, 650)]) {
     testWidgets(
       'small-window planning scrolls through inputs to reservation at $size',

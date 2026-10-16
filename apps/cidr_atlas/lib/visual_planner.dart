@@ -588,7 +588,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
     builder: (context, constraints) {
       final padding = constraints.maxWidth < 650 ? 12.0 : 20.0;
       final width = math.max(0.0, constraints.maxWidth - padding * 2);
-      final rail = width >= 960;
+      final rail = width >= 840;
       final wide = width >= 1320;
       final hasDetails = _candidate != null || _inspected != null;
       return SingleChildScrollView(

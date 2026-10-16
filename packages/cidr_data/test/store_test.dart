@@ -1,4 +1,5 @@
-// CIDR Atlas: durable inventory storage, reconciliation, and atomic imports.
+// CIDR Atlas
+// Persistence, reconciliation, and atomic import tests.
 // Author: Sergio Farfan <sergio.farfan@gmail.com>
 
 import 'dart:convert';

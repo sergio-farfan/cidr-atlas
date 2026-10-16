@@ -1,4 +1,5 @@
-// CIDR Atlas: offline import normalization and OCI record reconciliation.
+// CIDR Atlas
+// Inventory import validation and export codecs.
 // Author: Sergio Farfan <sergio.farfan@gmail.com>
 
 import 'dart:convert';

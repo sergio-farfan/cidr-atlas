@@ -1,3 +1,7 @@
+// CIDR Atlas
+// Application startup and local database setup.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 import 'dart:io';
 
 import 'package:cidr_data/cidr_data.dart';

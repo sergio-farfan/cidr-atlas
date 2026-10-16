@@ -1,4 +1,5 @@
-// CIDR Atlas: inventory import normalization and OCI JSON compatibility.
+// CIDR Atlas
+// Import normalization, OCI compatibility, and validation tests.
 // Author: Sergio Farfan <sergio.farfan@gmail.com>
 
 import 'dart:convert';

@@ -1,3 +1,7 @@
+// CIDR Atlas
+// Native macOS runner test entry point.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 import Cocoa
 import FlutterMacOS
 import XCTest

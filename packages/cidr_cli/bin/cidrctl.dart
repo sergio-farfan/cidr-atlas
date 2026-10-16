@@ -1,4 +1,5 @@
-// CIDR Atlas desktop command-line entrypoint.
+// CIDR Atlas
+// Command-line executable entry point.
 // Author: Sergio Farfan <sergio.farfan@gmail.com>
 
 import 'dart:io';

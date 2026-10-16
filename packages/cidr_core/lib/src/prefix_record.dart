@@ -1,3 +1,7 @@
+// CIDR Atlas
+// Prefix identity and planning metadata.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 enum PrefixKind { allocation, vcn, subnet }
 
 enum PrefixStatus { planned, reserved, active, retired }

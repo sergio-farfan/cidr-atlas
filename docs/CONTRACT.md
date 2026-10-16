@@ -1,5 +1,7 @@
 # CIDR Atlas implementation contract
 
+Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 Monorepo: `packages/cidr_core` (pure Dart), `packages/cidr_data` (Dart SQLite/imports), `packages/cidr_cli`, `apps/cidr_atlas` (Flutter macOS first).
 
 Core public API, exported from `package:cidr_core/cidr_core.dart`:
@@ -23,4 +25,4 @@ Data API exported from `package:cidr_data/cidr_data.dart`:
 
 UI: dark desktop workspace titled CIDR Atlas, sidebar Inventory / Conflicts / History, search and domain/status filters, selectable table, details pane, add/edit dialog, CIDR checker, available subnet planner, import preview, JSON/CSV export, empty state with optional clearly labeled demo data. No production-looking data preloaded. Uses synchronous store via controller; catch errors and show readable messages. Local DB is under path_provider's Application Support/cidr_atlas/inventory.sqlite.
 
-Agents own separate directories. Shared contract changes must be communicated.
+Shared contract changes must remain consistent across the domain, persistence, CLI, and application packages.

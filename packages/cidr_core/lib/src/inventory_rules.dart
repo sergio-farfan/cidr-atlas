@@ -1,3 +1,7 @@
+// CIDR Atlas
+// Hierarchy, overlap, and allocation rules.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 import 'cidr.dart';
 import 'prefix_record.dart';
 

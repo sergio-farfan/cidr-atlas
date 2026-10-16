@@ -1,4 +1,5 @@
-// CIDR Atlas command parsing, inventory workflows, and OCI discovery.
+// CIDR Atlas
+// Command parsing, inventory workflows, and OCI discovery.
 // Author: Sergio Farfan <sergio.farfan@gmail.com>
 
 library;

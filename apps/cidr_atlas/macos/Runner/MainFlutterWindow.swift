@@ -1,3 +1,7 @@
+// CIDR Atlas
+// Native desktop window setup and plugin registration.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 import Cocoa
 import FlutterMacOS
 

@@ -1,3 +1,7 @@
+// CIDR Atlas
+// Prefix metadata serialization and validation tests.
+// Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 import 'dart:convert';
 
 import 'package:cidr_core/cidr_core.dart';

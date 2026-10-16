@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# CIDR Atlas
+# Build the standalone command-line executable.
+# Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 set -euo pipefail
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

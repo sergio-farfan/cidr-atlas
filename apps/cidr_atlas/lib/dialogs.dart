@@ -1,4 +1,5 @@
-// CIDR Atlas inventory editing, validation, import, and export dialogs.
+// CIDR Atlas
+// Inventory editing, planning, and OCI import dialogs.
 // Author: Sergio Farfan <sergio.farfan@gmail.com>
 
 import 'dart:convert';

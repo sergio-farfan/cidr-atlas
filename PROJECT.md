@@ -113,7 +113,11 @@ requests or local inventory writes were performed during native QA.
 
 ## Release status
 
-The v0.3.0 universal DMG is verified and prepared for private publication. It is
+The private [v0.3.0 preview release](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.3.0)
+is published with its universal DMG and checksum. Both uploaded asset sizes and
+SHA-256 digests match the verified local artifacts; private repository visibility
+and the unchanged v0.2.1 DMG were rechecked. Tag `v0.3.0` identifies source commit
+`e2318076b56536565834a7f480764b1d5f6f85be`. The DMG is
 21,157,660 bytes; SHA-256 is
 `91090df278ce252f05db2119464fb4efac20eb5d23a590463ed433458b078cc7`.
 The checksum-file SHA-256 is
@@ -135,7 +139,7 @@ App Sandbox disabled for local CLI process access and shared app/CLI storage.
 
 ## Next actions
 
-Publish the verified v0.3.0 private universal DMG/checksum, then scope the observed
-connectivity collector and topology model. Wider distribution
+Scope the observed connectivity collector and topology model while retaining
+address inventory and allocation as the main workflows. Wider distribution
 requires Developer ID signing and notarization. Keep customer data, credentials,
 databases, generated builds and machine-specific SDK paths out of Git.

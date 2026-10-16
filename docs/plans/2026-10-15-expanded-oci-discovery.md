@@ -51,5 +51,5 @@ PROJECT.md and package version references.
 - [x] Update contracts, guidance and version to 0.3.0; verify all affected packages.
 - [x] Obtain fresh independent whole-change review and address material findings.
 - [x] Freeze source, clean build universal macOS app and CLI, verify DMG/signature.
-- [ ] Publish private v0.3.0 prerelease and remotely verify both asset digests.
-- [ ] Record actual publication in PROJECT.md and keep primary clean.
+- [x] Publish private v0.3.0 prerelease and remotely verify both asset digests.
+- [x] Record actual publication in PROJECT.md and keep primary clean.

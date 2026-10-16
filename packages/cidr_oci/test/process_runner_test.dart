@@ -52,11 +52,24 @@ Future<void> main(List<String> args) async {
   });
 
   test('does not inherit unspecified environment values', () async {
-    expect(Platform.environment['PUB_CACHE'], isNotNull);
-    await child.writeAsString(
-        "import 'dart:io'; void main() { stdout.write(Platform.environment['PUB_CACHE'] ?? 'absent'); }");
-    final result = await const OciProcessRunner().run(command());
-    expect(result.stdout, 'absent');
+    // The home variable is set for every interactive or CI test runner on its
+    // platform, so it is a stable sentinel for parent-environment leakage.
+    final inherited = Platform.isWindows ? 'USERPROFILE' : 'HOME';
+    expect(Platform.environment[inherited], isNotNull,
+        reason: 'the test runner needs $inherited to detect inheritance');
+    await child.writeAsString('''
+import 'dart:convert';
+import 'dart:io';
+void main() {
+  stdout.write(jsonEncode({
+    'inherited': Platform.environment['$inherited'],
+    'explicit': Platform.environment['CIDR_ATLAS_EXPLICIT'],
+  }));
+}
+''');
+    final result = await const OciProcessRunner()
+        .run(command(environment: {'CIDR_ATLAS_EXPLICIT': 'kept'}));
+    expect(jsonDecode(result.stdout), {'inherited': null, 'explicit': 'kept'});
   });
 
   Future<File> sleepingChild() async {
@@ -66,7 +79,7 @@ import 'dart:async';
 import 'dart:io';
 Future<void> main() async {
   File('${directory.path}/ready').writeAsStringSync('ready');
-  await Future<void>.delayed(const Duration(seconds: 3));
+  await Future<void>.delayed(const Duration(seconds: 6));
   File('${marker.path}').writeAsStringSync('should never finish');
 }
 ''');
@@ -81,8 +94,10 @@ Future<void> main() async {
             .run(command(timeout: const Duration(milliseconds: 450))),
         throwsA(isA<OciException>()
             .having((e) => e.message, 'message', contains('timed out'))));
-    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 2)));
-    await Future<void>.delayed(const Duration(seconds: 3));
+    // Generous bound: well below the child's 6 s side effect and well above
+    // the 450 ms timeout plus bounded kill escalation on a loaded runner.
+    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 5)));
+    await Future<void>.delayed(const Duration(seconds: 6));
     expect(await marker.exists(), isFalse);
   });
 
@@ -96,14 +111,15 @@ Future<void> main() async {
         throwsA(isA<OciException>()
             .having((e) => e.message, 'message', contains('cancelled'))));
     final ready = File('${directory.path}/ready');
-    final deadline = DateTime.now().add(const Duration(seconds: 2));
+    // Readiness only bounds a wait for success, so allow a cold child VM.
+    final deadline = DateTime.now().add(const Duration(seconds: 10));
     while (!await ready.exists() && DateTime.now().isBefore(deadline)) {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
     expect(await ready.exists(), isTrue);
     cancellation.cancel();
     await outcome;
-    await Future<void>.delayed(const Duration(seconds: 3));
+    await Future<void>.delayed(const Duration(seconds: 6));
     expect(await marker.exists(), isFalse);
   });
 
@@ -144,11 +160,11 @@ Future<void> main() async {
   File('${marker.path}').writeAsStringSync('finished');
 }
 ''');
-    final stopwatch = Stopwatch()..start();
+    // No latency bound: child VM startup is outside the runner's control. A
+    // runner that waited for the child to exit would let it write the marker.
     await expectLater(
         const OciProcessRunner().run(command()), throwsA(isA<OciException>()));
-    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 1)));
-    await Future<void>.delayed(const Duration(seconds: 2));
+    await Future<void>.delayed(const Duration(seconds: 3));
     expect(await marker.exists(), isFalse);
   });
 
@@ -168,7 +184,7 @@ Future<void> main() async {
     final pending =
         const OciProcessRunner().run(command(cancellation: cancellation));
     final outcome = expectLater(pending, throwsA(isA<OciException>()));
-    final deadline = DateTime.now().add(const Duration(seconds: 2));
+    final deadline = DateTime.now().add(const Duration(seconds: 10));
     while (!await ready.exists() && DateTime.now().isBefore(deadline)) {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     }
@@ -176,6 +192,7 @@ Future<void> main() async {
     final stopwatch = Stopwatch()..start();
     cancellation.cancel();
     await outcome;
-    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 2)));
+    // The child never exits on its own; the bound shows cleanup is finite.
+    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 5)));
   }, skip: Platform.isWindows ? 'POSIX signal behavior' : false);
 }

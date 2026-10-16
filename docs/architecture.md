@@ -50,7 +50,21 @@ Normal hierarchy is allocation → VCN → subnet. A parent reference is explici
 arbitrary numeric containment does not establish a valid relationship. Imported
 subnets can also establish their relationship through matching VCN resource ID,
 tenancy, region, and routing domain. Cycles, missing parents, invalid kind
-relationships, and out-of-parent prefixes are structural errors.
+relationships, and out-of-parent prefixes are structural errors. A placeholder
+VCN parent without a resource id stays valid, as in v0.3.0, even when the
+subnet's VCN OCID names a comparable VCN recorded elsewhere (not retired, in the
+same routing domain, and in the same tenancy and region where both records set
+them). That contradiction is a non-blocking advisory
+(`InventoryRules.advisories`): it names the subnet, the recorded VCN by name,
+CIDR and OCID, and the placeholder parent, and asks to clear or change the
+parent. Import previews list it as a warning, CLI `check`/`reserve` print it on
+stderr, and the record editor shows it, so an OCI refresh that brings in the
+real VCN still applies.
+
+Conflict detection sorts each routing-domain/IP-version bucket by network
+address and sweeps it, checking ancestry only for overlapping pairs; cost is
+O(n log n + overlapping pairs) rather than all pairs. `conflictsFor` limits the
+same sweep to buckets with changed records for write transactions and editors.
 
 IPv4 and IPv6 use the same domain-aware logic. Network arithmetic uses full-width
 integers; IPv6 addresses are not reduced to floating-point numbers. Canonical
@@ -61,7 +75,11 @@ prefix.
 
 Manual reservations first validate structure and check conflicts. The CLI refuses
 conflicting reservations. The store permits structurally valid overlaps because
-discovery must be able to preserve real-world conflicts for review.
+discovery must be able to preserve real-world conflicts for review. Deletion is
+one transaction for one or several records; a record that a remaining record
+names as its parent is refused with the children listed, so a delete never
+leaves a dangling parent link. When SQLite has already rolled back a failed
+transaction, the original error is reported.
 
 Import has two stages: parse/preview, then apply. Applying a batch validates the
 combined inventory and commits atomically. Updates merge by stable record ID;
@@ -69,15 +87,25 @@ matching OCI resource/CIDR identities can reconcile an existing manual record.
 The shared store produces the same proposed merged inventory for client previews
 and committed imports, including parent-ID remapping. OCI updates preserve local owner, notes, status, parent, environment, and customer
 fields. Omitted resources remain present; a partial export cannot establish
-deletion or release of address space.
+deletion or release of address space. A CSV row matched by ID updates only the
+columns its header supplies, so a narrow spreadsheet cannot erase fields it
+does not mention; JSON backup records still replace the whole record. OCI
+previews warn, without changing the merge, when a locally retired record is
+still observed live, when the bundle is older than an existing observation,
+and when raw CLI input is a single truncated page. CSV export guards cells that
+spreadsheets would evaluate as formulas and import reverses that guard exactly.
 
 The audit trail records local operations and import provenance. This is an
 operational history, not a tamper-evident compliance ledger. The audit timestamp
 records when a file was applied; `verifiedAt` records the source observation
 time from OCI bundle `metadata.collectedAt`. Unknown observation time remains
-unknown rather than becoming the import time. Import coverage and observation
-timestamps are evidence about observations, not a guarantee of complete tenancy
-discovery.
+unknown rather than becoming the import time. Records write `verifiedAt` in UTC.
+CSV and backup input should carry an explicit `Z` or UTC offset and must
+carry a valid calendar date. The zone-less form that v0.3.0 wrote in CSV
+exports and backups is still accepted and read as local time, with a preview
+warning counting such values, so older backups restore; stored zone-less values
+are read the same way. Import coverage and observation timestamps are evidence
+about observations, not a guarantee of complete tenancy discovery.
 
 ## Address planning
 
@@ -98,8 +126,16 @@ heuristic preserves useful contiguous space without claiming optimal packing.
 
 Demand uses an explicit current/peak count, growth percentage and separate fixed
 allowance. Exact ceiling arithmetic chooses the most specific eligible prefix.
-OCI IPv4 subnets use `/16..30` with three reserved addresses, as documented in
-[Oracle's addressing comparison](https://docs.oracle.com/en-us/iaas/Content/Network/Concepts/ipv6.htm).
+OCI IPv4 subnets use `/16..30` with three reserved addresses. Oracle's
+[IPv4 and IPv6 comparison](https://docs.oracle.com/en-us/iaas/Content/Network/Concepts/ipv6.htm)
+gives the IPv4 subnet size as "/16 to /30, with 3 addresses reserved in each
+subnet by Oracle (first 2 and last 1)". The
+[Networking Overview](https://docs.oracle.com/en-us/iaas/Content/Network/Concepts/overview.htm)
+states the VCN size range of /16 to /30 and identifies the reserved addresses as
+the network address, the subnet default gateway and the broadcast address; the
+[VCN and subnet overview](https://docs.oracle.com/en-us/iaas/Content/Network/Tasks/Overview_of_VCNs_and_Subnets.htm)
+states that the first two addresses and the last in each subnet CIDR are
+reserved but defers the size range to the Networking Overview.
 Generic prefixes expose raw capacity without assuming provider or link semantics.
 Oracle's differing IPv6 reservation descriptions are surfaced as a policy
 limitation rather than resolved by guessing. Service-specific demand must be
@@ -107,9 +143,14 @@ entered by the operator; capacity alone does not validate service limits.
 
 The Flutter workspace presents inventory hierarchy, grouped OCI VCN identities,
 CIDR details, a free/blocked map, exact summaries and bounded alternatives. It
-invalidates calculations when inputs or inventory change. The reservation editor
+invalidates calculations when inputs or inventory change; a new record list from
+the controller counts as an inventory change, so a refresh clears current
+results. The hierarchy model is cached per inventory list and reuses the
+controller's conflicts instead of rescanning. The reservation editor
 permits review of metadata and requires recalculation if network, routing scope,
-or hierarchy changes. `InventoryStore.reserve` rejects duplicate IDs, invalid
+or hierarchy changes. Save errors stay inside the open editor with the form
+input kept. Records observed by OCI keep their observed identity fields
+read-only in the editor; refresh from OCI updates them. `InventoryStore.reserve` rejects duplicate IDs, invalid
 structure and current conflicts atomically; the planner never offers a conflict
 override. Saved notes retain demand, policy, ranking and coverage rationale through
 backup/restore and OCI refresh. Existing imports continue to preserve discovered
@@ -127,12 +168,20 @@ CSV/JSON files. It reads profile-selection metadata when discovery opens, then
 requires explicit **Load scopes** and **Discover inventory** actions for network
 requests. The CLI exposes the same adapter through `discover oci`, requiring
 profile and routing domain, plus explicit region and compartment scope modes. It previews by default;
-`--apply` performs the shared atomic import. A successful CLI preview can create
-the selected SQLite file but changes no inventory or history records.
+`--apply` performs the shared atomic import. The database path is checked before
+any OCI request. A successful nonempty CLI preview can create the selected
+SQLite file, with a stderr warning, but changes no inventory or history records;
+an empty live discovery exits 0 without opening or creating the database.
 
-The adapter locates an existing OCI CLI through PATH, standard macOS Homebrew
-locations, or an explicit executable path. Configuration selection supports an
-explicit path and the standard local profile file. Only allowlisted selection
+The adapter locates an existing OCI CLI through an explicit executable path
+(`~/` expanded), PATH, `$HOME/bin/oci` (Oracle's installer default), then the
+macOS Homebrew locations. Configuration selection uses an explicit path,
+otherwise `OCI_CLI_CONFIG_FILE` when set, otherwise `~/.oci/config`. Because a
+Finder-launched app usually lacks shell variables, the app and a shell-launched
+CLI can resolve the same profile name from different files; the CLI prints the
+configuration file and profile it used. Profile parsing follows Python
+ConfigParser, which the OCI SDK uses, including header comments and indented
+continuation lines. Only allowlisted selection
 metadata is retained, with DEFAULT inheritance and API-key/security-token mode
 selection. The adapter does not open private-key or token files; the CLI process
 uses its own credentials. Failed or expired credentials require repair or renewal
@@ -147,6 +196,17 @@ fresh scopes during collection. Compartments are global and enumerated once;
 regional VCN/subnet lists traverse the selected region × compartment matrix
 sequentially, with all pages and no resource filters. Each resource records its
 actual query region, and multi-region metadata omits a misleading scalar region.
+Regions are canonicalized before deduplication: input is trimmed and lowercased,
+full identifiers are accepted, and three-letter region keys such as `IAD` are
+mapped to region names through the tenancy's region subscriptions. Unknown keys
+and other shapes are rejected before any resource request, so an alias never
+becomes a second inventory scope. The store matches refreshed OCI records by
+OCID, kind, CIDR, routing domain and tenancy, not by region spelling, so records
+that v0.3.0 stored under `IAD` or an uppercase name are updated in place, keep
+their planning fields and take the canonical region. Compartments carry their parent OCID and a
+display path from the tenancy root (`root / prod / network`), which tells
+same-named compartments apart; the list starts with the tenancy root and is
+otherwise sorted by path.
 Manual comma-separated regions and a compartment OCID remain available for narrow
 scopes. READY filtering and root-only subtree enumeration follow Oracle's
 [region subscription](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/iam/region-subscription/list.html)
@@ -177,16 +237,30 @@ or type without raw resource values. The behavior follows Oracle's
 Each process receives an executable and argument array without a shell. Explicit
 configuration, profile, authentication, region, and JSON output plus an empty rc
 file prevent local defaults from changing the intended scope. Inherited OCI
-overrides are removed except `OCI_CLI_CERT_BUNDLE`; normal OS, proxy, and TLS trust
-settings remain. Oracle documents these sources of defaults in
+overrides are removed from the child except `OCI_CLI_CERT_BUNDLE`; normal OS,
+proxy, and TLS trust settings remain. `OCI_CLI_CONFIG_FILE` is also removed from
+the child, but the adapter reads it once to choose the configuration file it
+then passes explicitly. Oracle documents these sources of defaults in
 [CLI option precedence](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/clienvironmentvariables.htm)
 and [CLI rc configuration](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliconfigure.htm).
-The child receives closed stdin, both output streams are consumed, OCI retries
-are bounded, and no raw credential-bearing diagnostics are presented. Requests
-have a 60-second deadline and the complete collection has a 180-second deadline for one selected pair or
-1800 seconds for broader modes,
-followed by bounded termination and stream cleanup. Dialog dismissal and CLI
-Ctrl-C cancel active collection and reject late results.
+The child receives closed stdin, both output streams are consumed, and no raw
+credential-bearing diagnostics are presented. Every command passes
+`--connection-timeout 10`, `--read-timeout 15` and `--max-retries 3`. In the
+installed OCI CLI 3.94.1, `--max-retries` sets the SDK's total attempt count, so
+3 is one try plus two retries; there is no second retry loop in Dart. Each
+command is bounded to 120 seconds, which covers three attempts plus SDK backoff;
+`--all` pagination can make several HTTP requests in one command, each with its
+own retries, so a long paginated listing can reach the bound and fail closed. The whole-collection limit applies
+on top of the command bound: 180 seconds for one region/compartment pair or 1800
+seconds for broader modes, or an explicit limit from CLI `--collection-timeout`
+(30 to 86,400 seconds) or the dialog's optional limit (1 to 1440 minutes). With
+worst-case retries, the 180-second limit can end a single-pair collection before
+its second command's own bound; collection then fails closed. The limit is
+recomputed after region keys resolve, measured from the start of collection.
+Termination and stream cleanup are bounded. Dialog dismissal and CLI Ctrl-C
+cancel active collection and reject late results. Progress events carry the
+scope count and the limit in effect, so the CLI states both before the first
+scope.
 
 The returned bundle records tenancy, actual regions/compartments and selection
 modes, completed pairs/resource counts, UTC collection start/completion, all-page
@@ -200,10 +274,19 @@ and VCN BYOIPv6 arrays.
 
 ## Local data and platform rollout
 
-On macOS, both interfaces use Application Support under
-`cidr_atlas/inventory.sqlite`. CLI `--db` enables an isolated inventory or test
-database. SQLite is local to the app process; no shared-folder synchronization
+Both interfaces open the path from the shared `cidr_data` function
+`defaultDatabasePath`. On macOS that is
+`~/Library/Application Support/cidr_atlas/inventory.sqlite`, not a
+bundle-specific folder; sharing it requires the app to remain unsandboxed. The
+path is unchanged from v0.3.0. Windows uses `%APPDATA%/cidr_atlas/inventory.sqlite`; other systems
+use `$XDG_DATA_HOME/cidr_atlas/inventory.sqlite` when it is absolute, otherwise
+`~/.local/share/cidr_atlas/inventory.sqlite`. CLI `--db` enables an isolated
+inventory or test database, and the CLI warns on stderr whenever a command
+creates a new empty database file. SQLite is local to the app process; no shared-folder synchronization
 is implemented. JSON exports provide reviewable backups and manual transfer.
+New installations start empty. Optional fictional sample records carry source
+`demo`, are only added to an empty database, and can be removed together in one
+transaction.
 
 Mac desktop code is the first graphical target. The shared Dart packages prepare
 for iOS, Windows, and Linux. Platform menus, navigation, permissions, file pickers,

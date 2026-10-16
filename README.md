@@ -117,7 +117,10 @@ length**, enter the new child size, such as `24`, or use address-demand mode to
 let the app select the size.
 
 The app starts with an empty inventory. Optional demo records and the files under
-`examples/` are explicitly fictional. Use a separate routing domain for each
+`examples/` are explicitly fictional. **Explore with fictional sample data** adds
+sample records, labeled with source `demo`, only to an empty inventory; **Remove
+sample data** in the inventory table header removes all of them in one change.
+Use a separate routing domain for each
 independent address space; networks connected through a DRG, VPN, FastConnect, or
 another cloud should share the relevant planning scope.
 
@@ -127,18 +130,32 @@ another cloud should share the relevant planning scope.
 4. Check a proposed CIDR before reserving it, and review the Conflicts view.
 5. Export a JSON backup after important changes.
 
-The desktop workspace provides an inventory table, search and filters, prefix
-details, editing, conflict review, history, an address checker, a free-space
-planner, import preview, and JSON/CSV export. Offline imports do not require OCI
-tooling or a network connection.
+The sidebar has **Inventory**, **Conflicts**, **Planner** and **History**. The
+workspace provides an inventory table, search and filters, prefix details,
+editing, conflict review, history, an address checker, a free-space planner,
+import preview, and JSON/CSV export. Offline imports do not require OCI tooling
+or a network connection.
+
+Editor save errors appear inside the open editor and keep your input. For
+records imported from OCI, the observed fields (name, CIDR, routing domain,
+kind, tenancy, region, compartment, resource and VCN OCIDs) are read-only;
+refresh from OCI to update them. Status, parent, customer, owner, environment
+and notes stay editable. A parent with children cannot be deleted; the message
+lists the children to delete or re-parent first. History shows the latest 100
+changes, with **Load more** when older entries exist. **Export all** re-reads
+the database first, because `cidrctl` can change it while the app is open.
 
 ## Visual address planning
 
 Open **Planner**, explicitly choose a routing domain, and select an allocation or
 VCN pool. The hierarchy groups OCI VCN prefixes by resource identity and shows
 their known subnets. The address map highlights free intervals, blocked space,
-conflicts, and the selected recommendation. Zoom controls and keyboard-selectable
-alternatives support reviewing large pools. Compact planning controls sit beside the main address map, with selected-network
+conflicts, and the selected recommendation; free gaps are drawn above blocked
+space. Zoom magnifies the address axis around the selected candidate, **Zoom to
+candidate** centres it, and keyboard-selectable alternatives support reviewing
+large pools. Refreshing the inventory, including **Export all**, clears current
+results; select **Find available space** again. Compact planning controls sit
+beside the main address map, with selected-network
 details adjacent on wide windows. The **Address hierarchy** shows membership and
 ancestry. Actual routes, gateways, DRGs and peering require a future observed
 connectivity view; CIDR containment alone does not establish connections.
@@ -177,8 +194,14 @@ Use an existing OCI CLI installation and profile. The adapter was checked agains
 installed OCI CLI 3.94.1; command documentation currently identifies 3.95.0. OCI
 configuration profiles and DEFAULT inheritance follow
 [Oracle's configuration format](https://docs.oracle.com/en-us/iaas/Content/API/Concepts/sdkconfig.htm).
-The default macOS configuration is `~/.oci/config`; an explicit configuration
-file and executable path can be selected in the dialog or CLI.
+Without an explicit configuration file, CIDR Atlas uses `OCI_CLI_CONFIG_FILE`
+when it is set, otherwise `~/.oci/config`. A Finder-launched app usually does
+not see variables exported in a shell, so the app and `cidrctl` can read
+different files for the same profile name; `cidrctl discover` prints the
+configuration file and profile it used. An explicit configuration file and
+executable path can be selected in the dialog or CLI. Without an explicit
+executable, the OCI CLI is found on PATH, then at `~/bin/oci` (Oracle's
+installer default), `/opt/homebrew/bin/oci` or `/usr/local/bin/oci`.
 
 In the app, open **Import → Discover from OCI CLI**:
 
@@ -188,8 +211,11 @@ In the app, open **Import → Discover from OCI CLI**:
 2. Select **Load scopes** to retrieve subscribed regions and accessible
    compartments. Choose one or several READY regions, or **All READY subscribed regions**.
    Independently choose one direct compartment or **All accessible compartments
-   and subcompartments**. Manual comma-separated regions and compartment OCID
-   entry remain available for narrow scopes when enumeration is unavailable.
+   and subcompartments**. Compartments are listed by their path from the tenancy
+   root, such as `root / prod / network`, and the selected OCID is shown below
+   the selector. Manual comma-separated regions and compartment OCID entry
+   remain available for narrow scopes when enumeration is unavailable; **Load
+   scopes** in manual mode keeps what you typed.
 3. Enter the routing domain for connectivity and overlap checking, then select
    **Discover inventory**. Cancel stops collection and discards its result.
 4. Review the prefix count, validation errors, conflicts, coverage, and observation
@@ -201,7 +227,15 @@ subnet pages. Single-compartment mode collects direct resources only. The
 all-compartments option freshly enumerates accessible active descendants from
 tenancy root and includes root once, collecting their networks across the chosen
 regions in one preview. All-region mode freshly selects READY subscriptions and
-reports non-READY exclusions. Each resource retains its actual region.
+reports non-READY exclusions. Each resource retains its actual region. Regions
+are full identifiers such as `us-ashburn-1` (any case) or three-letter region
+keys such as `IAD`, which are resolved through the tenancy's region
+subscriptions; `IAD` and `us-ashburn-1` together are one region. Other forms are
+rejected before any request. Earlier versions stored the region as typed. A
+refresh matches existing records by OCID rather than by region spelling, so a
+network that v0.3.0 stored under an uppercase name or a region key is updated
+in place: it keeps its owner, notes, status and parent and takes the canonical
+region.
 
 Oracle documents [root subtree and ACCESSIBLE enumeration](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/iam/compartment/list.html),
 [region subscriptions](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/iam/region-subscription/list.html),
@@ -231,10 +265,15 @@ VCN's other subnets. An inaccessible or missing context VCN produces a visible
 coverage warning; it is not evidence that the VCN was deleted. Oracle exposes
 this individual lookup through [Get VCN](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/network/vcn/get.html).
 Required-list failures, malformed responses, cancellation, and timeouts prevent a
-partial discovery from reaching Apply. Requests have a 60-second deadline. Complete collection is bounded to 180
-seconds for one selected pair, or 1800 seconds for broader modes, followed by
-bounded process cleanup. Progress shows the current scope; Cancel/Ctrl-C stops
-collection without applying it.
+partial discovery from reaching Apply. Each OCI CLI request uses a 10-second
+connection timeout, a 15-second read timeout and `--max-retries 3`, which in OCI
+CLI 3.94.1 means three attempts in total. Each command is bounded to 120
+seconds. Complete collection is bounded to 180 seconds for one selected pair, or
+1800 seconds for broader modes, followed by bounded process cleanup. For a large
+scope, set a longer limit in the dialog's **Collection time limit, minutes
+(optional)** field (1 to 1440) or with `--collection-timeout SECONDS` (30 to
+86400). A collection that reaches its limit returns nothing to apply. Progress
+shows the current scope; Cancel/Ctrl-C stops collection without applying it.
 
 The app reads allowlisted profile metadata and leaves private-key and token-file
 access to the OCI CLI process. It creates no credentials and opens no automatic
@@ -258,106 +297,129 @@ dart run bin/cidrctl.dart --help
 `scripts/cidrctl` runs the source CLI from any directory. Build a standalone
 executable on your target operating system with `scripts/build_cli.sh`.
 
-Run these examples from the project root (`~/projects/cidr-atlas`):
+Run these examples from the project root (`~/projects/cidr-atlas`). They keep
+the example database and backup in `~/tmp` inside your home directory. Keep
+live-discovery databases and exports in a protected directory, not a shared one
+such as `/tmp`.
 
 ```bash
-./scripts/cidrctl --db /tmp/cidr-atlas-demo.sqlite \
+mkdir -p ~/tmp
+
+./scripts/cidrctl --db ~/tmp/cidr-atlas-demo.sqlite \
   import csv --file examples/fictional_inventory.csv
 
 # Imports are previews until --apply is supplied.
-./scripts/cidrctl --db /tmp/cidr-atlas-demo.sqlite \
+./scripts/cidrctl --db ~/tmp/cidr-atlas-demo.sqlite \
   import csv --file examples/fictional_inventory.csv --apply
 
-./scripts/cidrctl --db /tmp/cidr-atlas-demo.sqlite list
+./scripts/cidrctl --db ~/tmp/cidr-atlas-demo.sqlite list
 
-./scripts/cidrctl --db /tmp/cidr-atlas-demo.sqlite \
+./scripts/cidrctl --db ~/tmp/cidr-atlas-demo.sqlite \
   check 10.64.32.0/20 --routing-domain example-corporate \
   --kind vcn --parent example-corporate-pool
 
-./scripts/cidrctl --db /tmp/cidr-atlas-demo.sqlite \
+./scripts/cidrctl --db ~/tmp/cidr-atlas-demo.sqlite \
   reserve 10.64.32.0/20 --name future-qa-vcn \
   --routing-domain example-corporate --parent example-corporate-pool
 
-./scripts/cidrctl --db /tmp/cidr-atlas-demo.sqlite \
+./scripts/cidrctl --db ~/tmp/cidr-atlas-demo.sqlite \
   import oci --file examples/fictional_oci_bundle.json \
   --routing-domain example-oci --apply
 
-./scripts/cidrctl --db /tmp/cidr-atlas-demo.sqlite \
+./scripts/cidrctl --db ~/tmp/cidr-atlas-demo.sqlite \
   list --routing-domain example-oci --format json
 
-./scripts/cidrctl --db /tmp/cidr-atlas-demo.sqlite \
-  export --format json --file /tmp/cidr-atlas-backup.json
+./scripts/cidrctl --db ~/tmp/cidr-atlas-demo.sqlite \
+  export --format json --file ~/tmp/cidr-atlas-backup.json
 
-./scripts/cidrctl --db /tmp/cidr-atlas-demo.sqlite history
+./scripts/cidrctl --db ~/tmp/cidr-atlas-demo.sqlite history
 ```
 
 Live discovery uses the same preview/apply rules. Replace the fictional profile,
 region, compartment OCID, and routing domain with your intended scope:
 
 ```bash
+mkdir -p ~/tmp
+
 # Preview only; no inventory or history records are written.
-./scripts/cidrctl --db /tmp/cidr-atlas-live.sqlite discover oci \
+./scripts/cidrctl --db ~/tmp/cidr-atlas-live.sqlite discover oci \
   --profile EXAMPLE --region us-phoenix-1 \
   --compartment-id ocid1.compartment.oc1..example \
   --routing-domain example-connected
 
 # Apply only after reviewing the same scope and authentication settings.
-./scripts/cidrctl --db /tmp/cidr-atlas-live.sqlite discover oci \
+./scripts/cidrctl --db ~/tmp/cidr-atlas-live.sqlite discover oci \
   --profile EXAMPLE --region us-phoenix-1 \
   --compartment-id ocid1.compartment.oc1..example \
   --routing-domain example-connected --apply
 
 # Multiple selected regions, all accessible compartments; preview only.
-./scripts/cidrctl --db /tmp/cidr-atlas-live.sqlite discover oci \
+./scripts/cidrctl --db ~/tmp/cidr-atlas-live.sqlite discover oci \
   --profile EXAMPLE --region us-phoenix-1,us-ashburn-1 \
   --all-compartments --routing-domain example-connected
 
 # All READY regions and accessible compartments/subcompartments; preview only.
-./scripts/cidrctl --db /tmp/cidr-atlas-live.sqlite discover oci \
+./scripts/cidrctl --db ~/tmp/cidr-atlas-live.sqlite discover oci \
   --profile EXAMPLE --all-regions --all-compartments \
   --routing-domain example-connected
 
 # Optional explicit paths and authentication override.
-./scripts/cidrctl --db /tmp/cidr-atlas-live.sqlite discover oci \
+./scripts/cidrctl --db ~/tmp/cidr-atlas-live.sqlite discover oci \
   --profile EXAMPLE --region us-phoenix-1 \
   --compartment-id ocid1.compartment.oc1..example \
   --routing-domain example-connected \
   --config-file "$HOME/.oci/config" --oci-bin /opt/homebrew/bin/oci \
   --auth security_token
+
+# A broad scope that needs more than the default 1800-second limit.
+./scripts/cidrctl --db ~/tmp/cidr-atlas-live.sqlite discover oci \
+  --profile EXAMPLE --all-regions --all-compartments \
+  --routing-domain example-connected --collection-timeout 3600
 ```
 
 `--auth` accepts `api_key` or `security_token`; without it, authentication follows
 the selected profile's token metadata. Profile and routing domain are required.
 Choose repeated/comma-separated `--region` or `--all-regions`, and
 `--compartment-id` or `--all-compartments`; each pair is mutually exclusive. A new discovery command collects a new observation, so its preview may
-differ from an earlier run. Progress goes to stderr; warnings and the preview go
-to stdout. Ctrl-C cancels collection before apply. A successful preview can create
-the selected local database file but writes no inventory or history records.
+differ from an earlier run. The database path is checked before any OCI request.
+Progress goes to stderr: the configuration file and profile used, then the scope
+count and limit, for example `Collecting 1 region/compartment scope with 2
+sequential list requests within the 180-second default collection limit.`, then
+each scope. Warnings and the preview go to stdout. Ctrl-C cancels collection
+before apply. A successful nonempty preview can create the selected local
+database file, with a stderr warning, but writes no inventory or history
+records. A successful discovery that finds no networks prints `Discovery
+completed: no networks were found in the selected scope. No records were
+changed.` and exits 0, with or without `--apply`, without creating a database.
 
-Global `--db` can also appear after the command. Without it, macOS uses
-`~/Library/Application Support/cidr_atlas/inventory.sqlite`, shared with the app.
-Linux uses `$XDG_DATA_HOME/cidr_atlas/inventory.sqlite`, falling back to
-`~/.local/share/cidr_atlas/inventory.sqlite`. Windows uses
-`%APPDATA%/cidr_atlas/inventory.sqlite` for the CLI. Use explicit `--db` when
-coordinating non-macOS paths.
+Global `--db` can also appear after the command. Without it, the CLI and the app
+use the same default: macOS
+`~/Library/Application Support/cidr_atlas/inventory.sqlite`, Linux
+`$XDG_DATA_HOME/cidr_atlas/inventory.sqlite` when `XDG_DATA_HOME` is an absolute
+path, otherwise `~/.local/share/cidr_atlas/inventory.sqlite`, and Windows
+`%APPDATA%/cidr_atlas/inventory.sqlite`. A relative or empty `XDG_DATA_HOME` is
+ignored, as the XDG specification requires. Any command that creates a new
+empty database file warns on stderr, so a mistyped `--db` is visible.
 
 The CLI uses the same recommendation engine. These examples use a manually
 specified, fictional boundary; add `--parent ID` when selecting an existing pool:
 
 ```bash
+mkdir -p ~/tmp
+
 # Preview aligned /24 candidates and exact slot totals.
-./scripts/cidrctl --db /tmp/cidr-atlas-demo.sqlite recommend \
+./scripts/cidrctl --db ~/tmp/cidr-atlas-demo.sqlite recommend \
   --pool 10.90.0.0/20 --routing-domain example-connected \
   --prefix 24 --format json
 
 # Explicit demand sizing: 100 + 20% + 4 = 124 assignable addresses.
-./scripts/cidrctl --db /tmp/cidr-atlas-demo.sqlite recommend \
+./scripts/cidrctl --db ~/tmp/cidr-atlas-demo.sqlite recommend \
   --pool 10.90.0.0/20 --routing-domain example-connected \
   --addresses 100 --growth-percent 20 --additional 4 \
   --basis current --policy oci_ipv4 --kind subnet
 
 # Reserve the first ranked candidate only after reviewing the same inputs.
-./scripts/cidrctl --db /tmp/cidr-atlas-demo.sqlite recommend \
+./scripts/cidrctl --db ~/tmp/cidr-atlas-demo.sqlite recommend \
   --pool 10.90.0.0/20 --routing-domain example-connected \
   --addresses 100 --growth-percent 20 --additional 4 \
   --basis current --policy oci_ipv4 --kind subnet \
@@ -369,26 +431,34 @@ specified, fictional boundary; add `--parent ID` when selecting an existing pool
 already planned peak with `--basis peak`. `--additional` defaults to zero.
 `--limit` defaults to 12. JSON encodes exact address/slot integers as decimal
 strings. A preview writes no inventory or history records, though opening a new
-database path can create the file. No-fit returns 1, invalid usage 2, and a stale
-conflicting apply 3. Generic prefix planning also supports IPv6.
+database path can create the file. A no-fit preview returns 0 with a warning; in
+scripts, use `--format json` and check for zero candidates. `--apply` with no
+candidate returns 1, invalid usage 2, and a stale conflicting apply 3. Generic
+prefix planning also supports IPv6.
 
 | Exit code | Meaning |
 | --- | --- |
 | `0` | Command succeeded, or import preview completed |
 | `1` | File, storage, discovery, structural validation, or import failure |
-| `2` | Invalid command usage |
+| `2` | Invalid command usage, including a blank `--db`, a missing `HOME`/`APPDATA` without `--db`, an OCI bundle without `--routing-domain`, `--routing-domain` with a CSV or Atlas backup, and `export --file` naming the open database |
 | `3` | Proposed CIDR conflicts; reserve did not write it |
 
 `check` reports conflicts involving its candidate only. Use `--parent` to declare
 intentional containment. `--id` can identify a record being checked as an edit;
-`reserve` creates new records and refuses an existing ID. Imports preserve
+`reserve` creates new records and refuses an existing ID (exit 1). `check`,
+`reserve`, `recommend`, `discover` and OCI JSON import warn on stderr when the
+routing domain has no non-retired records, suggesting near matches such as a
+different letter case; domains are still matched exactly. Imports preserve
 discovered conflicts for review, so a successful import does not certify that
 the entire inventory is conflict-free.
 
 Filtered `export` includes required parent allocations and matching OCI VCN
 context, even when those ancestors do not match the filter, so the file can be
 imported into an empty inventory. Filtered `list` output is a report and can omit
-parents; use `export` for a portable backup.
+parents; use `export` for a portable backup. `export --file` refuses the open
+database and its `-wal`, `-shm` and `-journal` files, including through
+symbolic links. An existing export file is replaced atomically and keeps its
+permission mode.
 
 ## Imports and backup
 
@@ -402,18 +472,44 @@ id,cidr,name,routingDomain,kind,status,customer,tenancy,region,compartment,envir
 fields. `kind` is `allocation`, `vcn`, or `subnet`; `status` is `planned`,
 `reserved`, `active`, or `retired`. When defining a hierarchy manually, use
 stable record IDs and matching `parentId` values. CIDRs must be canonical network
-prefixes: `10.64.1.3/24` is rejected instead of silently changed to `10.64.1.0/24`.
+prefixes: `10.64.1.3/24` is rejected instead of silently changed to `10.64.1.0/24`,
+and a prefix length with leading zeros such as `/08` is rejected.
+
+A CSV row whose `id` matches an existing record updates only the columns in the
+file's header; absent columns, including `status`, `kind`, `source` and
+`verifiedAt`, keep their existing values. A column that is present but blank
+clears that field (blank `status`, `kind` or `source` resets to `reserved`,
+`vcn` or `csv`). Rows without an `id` receive a stable generated ID, so
+re-importing the same file is idempotent. Two such rows describing the same
+CIDR, kind, routing domain and resource ID are an error, and an id-less row that
+matches an existing record with a different name or customer produces a
+warning; add an `id` column to keep both.
+
+`verifiedAt` in CSV files and JSON backups should include `Z` or a UTC offset,
+such as `2026-10-15T18:30:00Z`, and must be a valid calendar date and time;
+values are stored and exported in UTC. Zone-less timestamps, which v0.3.0 wrote
+in its exports and backups, are read as local time, and the preview warns how
+many values were read that way. Rolled-over or unparseable values are rejected
+with a row-numbered error. Exported CSV prefixes `'` to any cell that a
+spreadsheet would evaluate as a formula (starting with `=`, `+`, `-`, `@`, tab
+or carriage return), and import removes that quote, so exports round-trip
+unchanged. In a hand-written CSV, a literal leading `'` before one of those
+characters is removed on import.
 
 JSON backups contain `{"format":"cidr-atlas","version":1,"records":[...]}`.
 Use an app/CLI JSON export as the template. A backup can be imported through the
-JSON import workflow. Export and import are the supported transfer mechanism;
+JSON import workflow; a backup record replaces the whole existing record with
+the same ID. Export and import are the supported transfer mechanism;
 do not sync a live SQLite database through iCloud Drive or a shared folder.
 
 OCI bundle imports accept VCN and subnet arrays plus coverage metadata. See
 `examples/fictional_oci_bundle.json`. OCI CLI-style kebab-case fields are accepted;
-raw `{"data":[...]}` CLI output is also supported. VCNs can have multiple CIDRs.
+raw `{"data":[...]}` CLI output is also supported; save it with the OCI CLI's
+`--all` option. A single page that still carries `opc-next-page` produces a
+warning, because unlisted ranges would appear free. VCNs can have multiple CIDRs.
 Normalization includes subnet `ipv4-cidr-blocks`/`ipv4CidrBlocks` and VCN
-`byoipv6-cidr-blocks`/`byoipv6CidrBlocks`, deduplicated with existing aliases.
+`byoipv6-cidr-blocks`/`byoipv6CidrBlocks`, deduplicated with existing aliases
+by canonical CIDR.
 Each distinct prefix remains a separate record sharing the resource identity.
 Specify a routing domain when importing OCI JSON. Include tenancy, region, and
 coverage metadata in a bundle when available.
@@ -434,7 +530,11 @@ Imports merge records by ID and reconcile matching OCI resource/CIDR identities
 without deleting or automatically retiring absent resources. OCI reconciliation preserves local planning fields such as owner,
 notes, status, parent, environment, and customer. A file that omits a resource is
 not evidence that its address space has become free. Review the coverage warning
-and import preview before applying changes.
+and import preview before applying changes. The OCI preview also warns when a
+record you marked retired is still observed live (it stays retired, so its
+space counts as free), and when the bundle is older than an existing
+observation (applying rolls those records' observed fields and `verifiedAt`
+back to the bundle's time).
 
 ## Data and boundaries
 

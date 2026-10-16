@@ -122,10 +122,16 @@ void main() {
             'REQUESTS_CA_BUNDLE': '/trust/requests.pem',
             'OCI_CLI_CERT_BUNDLE': '/trust/oci.pem',
           });
-          expect(command.timeout, const Duration(seconds: 60));
-          final retries = int.parse(command
-              .arguments[command.arguments.indexOf('--max-retries') + 1]);
-          expect(retries, inInclusiveRange(0, 1));
+          expect(command.timeout, const Duration(seconds: 120));
+          String option(String name) =>
+              command.arguments[command.arguments.indexOf(name) + 1];
+          // OCI CLI 3.94.1 passes --max-retries to the SDK as max_attempts,
+          // which counts total attempts: 3 means one try plus two retries.
+          expect(option('--max-retries'), '3');
+          // 3 x (10 s connect + 15 s read) plus SDK backoff (at most ~5 s for
+          // two retries) fits inside the 120 s per-command deadline.
+          expect(option('--connection-timeout'), '10');
+          expect(option('--read-timeout'), '15');
           return jsonResult(suffix(command)[1] == 'vcn' ? [vcn] : [subnet]);
         });
     final result = await client.discover(connection,
@@ -246,8 +252,9 @@ void main() {
     final client = OciCliClient(runner: (command) async {
       final args = suffix(command);
       if (args[2] == 'get') return jsonResult(externalVcn);
-      if (args[1] == 'vcn')
+      if (args[1] == 'vcn') {
         return const OciCommandResult(exitCode: 0, stdout: '');
+      }
       return jsonResult([externalSubnet]);
     });
     final discovery = await client.discover(connection,
@@ -277,8 +284,9 @@ void main() {
       () async {
     final client = OciCliClient(runner: (command) async {
       final args = suffix(command);
-      if (args[2] == 'get')
+      if (args[2] == 'get') {
         return const OciCommandResult(exitCode: 0, stdout: '');
+      }
       return jsonResult(args[1] == 'vcn' ? [] : [externalSubnet]);
     });
     await expectLater(
@@ -408,7 +416,7 @@ void main() {
     test('denied or missing context remains a warning: $code', () async {
       final client = OciCliClient(runner: (command) async {
         final args = suffix(command);
-        if (args[2] == 'get')
+        if (args[2] == 'get') {
           return OciCommandResult(
               exitCode: 1,
               stdout: '',
@@ -416,6 +424,7 @@ void main() {
                     'code': code,
                     'message': 'FICTIONAL_SECRET'
                   })}');
+        }
         return jsonResult(args[1] == 'vcn' ? [] : [externalSubnet]);
       });
       final discovery = await client.discover(connection,
@@ -485,8 +494,9 @@ void main() {
   test('malformed successful context is fatal', () async {
     final client = OciCliClient(runner: (command) async {
       final args = suffix(command);
-      if (args[2] == 'get')
+      if (args[2] == 'get') {
         return jsonResult({'id': 'wrong-vcn', 'compartment-id': external});
+      }
       return jsonResult(args[1] == 'vcn' ? [] : [externalSubnet]);
     });
     await expectLater(
@@ -500,9 +510,10 @@ void main() {
       () async {
     final client = OciCliClient(runner: (command) async {
       final args = suffix(command);
-      if (args[2] == 'get')
+      if (args[2] == 'get') {
         return const OciCommandResult(
             exitCode: 1, stdout: '', stderr: '{"code":"InternalError"}');
+      }
       return jsonResult(args[1] == 'vcn' ? [] : [externalSubnet]);
     });
     await expectLater(
@@ -529,7 +540,8 @@ void main() {
         result,
         throwsA(isA<OciException>()
             .having((e) => e.message, 'message', contains('cancelled'))));
-    final deadline = DateTime.now().add(const Duration(seconds: 1));
+    // Only bounds a wait for success; generous for a loaded runner.
+    final deadline = DateTime.now().add(const Duration(seconds: 10));
     while (calls == 0 && DateTime.now().isBefore(deadline)) {
       await Future<void>.delayed(const Duration(milliseconds: 1));
     }

@@ -30,13 +30,14 @@ final class PlanningSpace {
           routingDomain, 'routingDomain', 'Must not be blank.');
     }
     final ignoredIds = <String>{};
+    InventoryIndex? parsed;
     if (parentId != null) {
       final errors = validateInventory(records);
       if (errors.isNotEmpty) {
         throw ArgumentError(
             'Cannot plan from invalid inventory: ${errors.join(' ')}');
       }
-      final index = InventoryIndex(records);
+      final index = parsed = InventoryIndex(records);
       final selected = index.byId[parentId];
       if (selected == null) {
         throw ArgumentError.value(
@@ -58,6 +59,7 @@ final class PlanningSpace {
     if (!includeRanges) {
       return PlanningSpace._(const [], const []);
     }
+    final index = parsed ?? InventoryIndex(records);
     final ranges = <PlanningRange>[];
     for (final record in records) {
       if (record.status == PrefixStatus.retired ||
@@ -65,7 +67,20 @@ final class PlanningSpace {
           !sameRoutingDomain(record.routingDomain, routingDomain)) {
         continue;
       }
-      final network = Cidr.parse(record.cidr);
+      final network = index.networks[record];
+      if (network == null) {
+        // Fail closed: an unreadable record may describe occupied space, so
+        // it must not be treated as free.
+        final label = record.id.trim().isEmpty ? '(unnamed record)' : record.id;
+        var message = 'Invalid CIDR.';
+        try {
+          Cidr.parse(record.cidr);
+        } on FormatException catch (error) {
+          message = error.message;
+        }
+        throw ArgumentError(
+            'Cannot plan from invalid inventory: $label: $message');
+      }
       if (!parent.overlaps(network)) continue;
       ranges.add(PlanningRange(
         network.networkAddress < parent.networkAddress

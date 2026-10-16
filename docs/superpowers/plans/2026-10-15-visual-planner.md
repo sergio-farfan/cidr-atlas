@@ -81,24 +81,37 @@ Failure to fit demand is a clear error; a valid size with no aligned space retur
 an empty candidate list and zero freeSlots. JSON serializes BigInt as decimal
 strings. Additional constructors/model serialization details belong to the builder.
 
+## Status (reviewed 2026-10-16)
+
+Delivered in v0.2.0 (tag `v0.2.0`, published; see `PROJECT.md` at commit `8879f0a`) except where an item is
+marked **Open**. Evidence pointers name test files or release records. Notes
+marked **Since** record later changes from the 2026-10-16 review remediation.
+
 ## Task 1: Exact capacity and recommendations
 
 **Own:** packages/cidr_core/**.
 
-- [ ] Write failing details tests for IPv4 masks/ranges, /0,/31,/32, IPv6 /0,/128,
+- [x] Write failing details tests for IPv4 masks/ranges, /0,/31,/32, IPv6 /0,/128,
   containing supernets and OCI eligibility; implement the documented API.
-- [ ] Add failing interval/slot tests, then refactor the existing blocker logic
+  Evidence: `packages/cidr_core/test/address_planner_test.dart`, group `CIDR details`.
+- [x] Add failing interval/slot tests, then refactor the existing blocker logic
   into one reusable internal calculation shared with InventoryRules.available.
   Preserve its original first-address ordering/API. Test hierarchy/domain reuse,
   overlapping/nested blockers, partial slots, retired ranges and huge IPv6 spaces.
-- [ ] Add demand and ranking regressions: 100 +20% +4 ->124 ->OCI /25 with125
+  Evidence: `packages/cidr_core/lib/src/planning_space.dart`; `packages/cidr_core/test/address_planner_test.dart`, group
+  `exact address space`.
+- [x] Add demand and ranking regressions: 100 +20% +4 ->124 ->OCI /25 with125
   assignable; /26 fails; no-fit; exact growth rounding and invalid inputs.
-- [ ] Implement a deterministic best-fit heuristic: decompose free intervals
+  Evidence: `packages/cidr_core/test/address_planner_test.dart`, groups `address demand` and `recommendations`.
+- [x] Implement a deterministic best-fit heuristic: decompose free intervals
   into maximal aligned CIDRs, prefer the smallest fitting containing free block,
   use aligned edge placement/address tie-breaks, emit bounded suggestions and
   explanations while exact counts remain independent of limits.
-- [ ] Run format, analyzer and full core tests; report red/green evidence and
+  Evidence: `packages/cidr_core/lib/src/address_planner.dart`; `packages/cidr_core/test/address_planner_test.dart`, group
+  `recommendations`.
+- [x] Run format, analyzer and full core tests; report red/green evidence and
   final API before consumers finish. Root coordinates commits after review.
+  Evidence: v0.2.0 verification in `PROJECT.md` at commit `8879f0a`.
 
 ## Task 2: Visual planner and inspector
 
@@ -111,21 +124,39 @@ required void Function(PrefixRecord) onReserve})` and
 The proposed reserved PrefixRecord carries a unique ID, valid parent/kind/scope,
 status reserved, and the complete recommendation rationale in notes.
 
-- [ ] Write failing widget tests for explicit pool/domain selection, prefix and
+- [x] Write failing widget tests for explicit pool/domain selection, prefix and
   host-demand modes, visible required growth/additional controls, policy
   eligibility, exact summaries and bounded open-slot results.
+  Evidence: `apps/cidr_atlas/test/visual_planner_test.dart` (`planning requires an explicit routing domain`, `exact
+  bounded planning and responsive selection`, `demand exposes explicit growth
+  and extra demand`, `OCI subnet policy rejects a generic slash 31`).
 - [ ] Implement the established dark app styling with responsive controls,
   ordered free/blocked range visualization, labels/patterns, stable zoom/fit/reset,
   candidate selection and inspector. Use all records for planning regardless of
   presentation filters. Hierarchy groups multiple OCI CIDRs by resource identity
   and shows unresolved context accurately. No claimed network connectivity.
-- [ ] Exercise sidebar hierarchy/resource selection, multiple VCN CIDRs, conflict
+  - Delivered: styling, responsive controls, ordered free/blocked map, zoom and
+    reset, candidate selection, inspector, OCI resource grouping and unresolved
+    context (`apps/cidr_atlas/test/visual_planner_test.dart`). Planning always uses all records.
+  - **Open:** distinct labels and patterns per status (active, reserved,
+    planned, conflict, retired) on the map, which shows only free and blocked
+    space; planner presentation filters do not exist yet. Review finding #64.
+  - **Since:** Fit was replaced by **Zoom to candidate**, and zoom anchors on
+    the selected candidate.
+- [x] Exercise sidebar hierarchy/resource selection, multiple VCN CIDRs, conflict
   markers, partial coverage wording, no automatic collection, keyboard access,
   and 1100x740 /1440x900 layouts.
-- [ ] Test candidate invalidation after input edits/inventory refresh; reservation
+  Evidence: `apps/cidr_atlas/test/visual_planner_test.dart` (`one OCI resource groups CIDRs while unresolved context stays
+  visible`, `partial slots block and overlapping records display conflicts`,
+  `large IPv6 counts stay exact and keyboard selects candidate`, responsive
+  layout tests).
+- [x] Test candidate invalidation after input edits/inventory refresh; reservation
   callback only for current results. Default child kind is subnet under VCN and
   VCN under allocation; host-demand mode requires subnet intent.
-- [ ] Run owned-file format, Flutter analyze and full widget suite. Report evidence.
+  Evidence: `apps/cidr_atlas/test/visual_planner_test.dart` (`input edits invalidate selected candidates before
+  reservation`, `inventory changes and pool retirement invalidate a plan`).
+- [x] Run owned-file format, Flutter analyze and full widget suite. Report evidence.
+  Evidence: v0.2.0 verification in `PROJECT.md` at commit `8879f0a`.
 
 ## Task 3: CLI and persistence checks
 
@@ -134,49 +165,78 @@ Existing data APIs stay compatible. Add `InventoryStore.reserve(PrefixRecord)`
 to enforce new identity and conflict rejection atomically; existing save/import
 behavior remains unchanged.
 
-- [ ] Add failing CLI tests for `recommend --pool CIDR --routing-domain DOMAIN`
+- [x] Add failing CLI tests for `recommend --pool CIDR --routing-domain DOMAIN`
   with `--parent ID` optional; `--prefix N` or `--addresses N`; explicit
   `--growth-percent N` required with addresses; `--additional N` default0;
   `--basis current|peak`; `--policy generic|oci_ipv4`; `--limit N` default12;
   `--format text|json`. Demand defaults to OCI IPv4; prefix defaults generic.
-- [ ] Use AddressPlanner directly, with preview-only default. `--apply` explicitly
+  Evidence: `packages/cidr_cli/test/recommendation_test.dart`.
+- [x] Use AddressPlanner directly, with preview-only default. `--apply` explicitly
   reserves the first ranked candidate and requires `--name`; `--kind vcn|subnet`
   defaults based on parent, otherwise subnet. Reject any incompatible hierarchy
   or OCI demand/non-subnet intent. Append rationale to optional `--notes`.
-- [ ] Save with InventoryStore.reserve using the existing atomic transaction. Preserve
+  Evidence: `packages/cidr_cli/lib/src/recommendation.dart`; `packages/cidr_cli/test/recommendation_test.dart`.
+- [x] Save with InventoryStore.reserve using the existing atomic transaction. Preserve
   all existing commands/imports; errors retain current exit conventions.
-- [ ] Add meaningful data tests for persisted rationale through reopen/JSON backup
+  Evidence: `recommendation.dart` calls `store.reserve`. **Since:** `cidrctl
+  reserve` also writes through `InventoryStore.reserve`.
+- [x] Add meaningful data tests for persisted rationale through reopen/JSON backup
   and OCI refresh, plus two-connection stale-candidate rejection with unchanged
   inventory/history. Do not overwrite existing IDs on recommendation apply.
-- [ ] Format/analyze/test CLI and data; native compile and fictional temporary-DB
+  Evidence: `packages/cidr_data/test/planning_test.dart`.
+- [x] Format/analyze/test CLI and data; native compile and fictional temporary-DB
   smoke for preview/apply/no-fit/stale reservation. No real OCI calls.
+  Evidence: v0.2.0 verification in `PROJECT.md` at commit `8879f0a` (compiled-CLI fictional
+  temporary-database checks; the two-connection stale case in data tests).
 
 ## Task 4: Application integration and field guidance
 
 **Own:** root integrates app.dart, oci_dialog.dart, existing widget tests,
 version metadata and documentation. Separate from Task2 files.
 
-- [ ] Replace the old planner implementation with VisualPlanner, preserving
+- [x] Replace the old planner implementation with VisualPlanner, preserving
   navigation and existing pool behavior. Add CidrInspector to record details.
-- [ ] Reservation editor retains proposed rationale and saves with strict conflict
+  Evidence: `apps/cidr_atlas/lib/app.dart`; `apps/cidr_atlas/test/workspace_test.dart`
+  (`planner finds ranges within an explicitly selected pool`).
+- [x] Reservation editor retains proposed rationale and saves with strict conflict
   rejection. Do not expose the manual conflict-override path for recommendations.
-- [ ] Explain Routing domain in OCI discovery with an example and concise helper
+  Evidence: `apps/cidr_atlas/test/planner_integration_test.dart` (`reviewed recommendation saves strictly and retains its
+  decision`, `stale recommendation cannot use manual conflict override`).
+- [x] Explain Routing domain in OCI discovery with an example and concise helper
   text: a local overlap-check scope shared by connected address plans. Keep it
   explicitly required; never default it to tenancy, profile or region.
-- [ ] Test successful reservation and stale conflict rejection through real store,
+  Evidence: `apps/cidr_atlas/lib/oci_dialog.dart` helper text;
+  `apps/cidr_atlas/test/oci_dialog_test.dart` (`manual scope works after IAM
+  selector failure and requires a routing domain`).
+- [x] Test successful reservation and stale conflict rejection through real store,
   both offline and OCI import entry retention, and required-domain guidance.
+  Evidence: `apps/cidr_atlas/test/planner_integration_test.dart`;
+  `apps/cidr_atlas/test/oci_dialog_test.dart` (`manual scope works after IAM
+  selector failure and requires a routing domain`; entry retention through
+  `discovery help retains scope input without network requests` and `import
+  help retains preview and expandable coverage without writes`). **Since:**
+  end-to-end reservation through `AtlasApp`, including a concurrent conflicting
+  write.
 
 ## Task 5: Review, verification and release
 
-- [ ] Review each deliverable independently and resolve material findings; then
+- [x] Review each deliverable independently and resolve material findings; then
   review the whole branch. Verify sole project author identity.
+  Evidence: `PROJECT.md` at commits `7b75532` (scoped and integrated reviews)
+  and `8879f0a` (author and committer identity).
 - [ ] Run all package analyzers/tests and Flutter checks. Build native macOS app
   and CLI; smoke planner/inspector/reservation with fictional data and preserve
   any existing user inventory. Do not read real OCI config in automated checks.
-- [ ] Set app/CLI version0.2.0, update contracts/status/setup with official
+  - Delivered: all suites (252 tests), native app and CLI builds, and a native
+    planner/inspector preview with fictional data (`PROJECT.md` at commit `8879f0a`).
+  - **Open:** a native reservation/apply cycle. v0.2.0 recorded it as
+    additional verification; widget tests cover the reservation path.
+- [x] Set app/CLI version0.2.0, update contracts/status/setup with official
   references, build/mount/signature/checksum-verify universal DMG.
-- [ ] Integrate tested source, push private main/tag and publish v0.2.0 DMG plus
+  Evidence: commit `7b75532`; tag `v0.2.0`.
+- [x] Integrate tested source, push private main/tag and publish v0.2.0 DMG plus
   SHA-256. Verify GitHub uploaded size/digest. Keep v0.1.0 intact.
+  Evidence: commit `8879f0a` (verified private v0.2.0 release assets).
 
 ## Verified references
 

@@ -331,6 +331,75 @@ void main() {
       expect(blocked.summary.largestFreeBlock, isNull);
     });
 
+    test('IPv6 VCN planning is blocked by subnets linked only by OCI identity',
+        () {
+      final records = [
+        record('allocation', '2001:db8::/32', kind: PrefixKind.allocation),
+        const PrefixRecord(
+            id: 'vcn',
+            cidr: '2001:db8:1::/56',
+            name: 'vcn',
+            routingDomain: 'corporate',
+            resourceId: 'ocid.vcn.v6',
+            parentId: 'allocation'),
+        const PrefixRecord(
+            id: 'subnet',
+            cidr: '2001:db8:1::/64',
+            name: 'subnet',
+            routingDomain: 'corporate',
+            kind: PrefixKind.subnet,
+            vcnId: 'ocid.vcn.v6'),
+      ];
+      expect(InventoryRules.conflicts(records), isEmpty);
+      final plan = AddressPlanner.plan(
+          parent: Cidr.parse('2001:db8:1::/56'),
+          routingDomain: 'corporate',
+          parentId: 'vcn',
+          prefixLength: 64,
+          records: records,
+          limit: 2);
+      expect(plan.summary.freeSlots, BigInt.from(255));
+      expect(plan.candidates.map((candidate) => candidate.cidr.canonical),
+          isNot(contains('2001:db8:1::/64')));
+      expect(plan.summary.blockedIntervals.single.firstAddress, '2001:db8:1::');
+      expect(plan.summary.blockedIntervals.single.lastAddress,
+          '2001:db8:1:0:ffff:ffff:ffff:ffff');
+    });
+
+    test('a subnet in a second VCN block blocks only that block', () {
+      PrefixRecord block(String id, String cidr) => PrefixRecord(
+          id: id,
+          cidr: cidr,
+          name: id,
+          routingDomain: 'corporate',
+          resourceId: 'ocid.vcn.multi');
+      final records = [
+        block('block-1', '10.40.0.0/16'),
+        block('block-2', '10.41.0.0/16'),
+        const PrefixRecord(
+            id: 'subnet',
+            cidr: '10.41.0.0/24',
+            name: 'subnet',
+            routingDomain: 'corporate',
+            kind: PrefixKind.subnet,
+            vcnId: 'ocid.vcn.multi'),
+      ];
+      expect(InventoryRules.conflicts(records), isEmpty);
+      AllocationPlan inBlock(String id, String cidr) => AddressPlanner.plan(
+          parent: Cidr.parse(cidr),
+          routingDomain: 'corporate',
+          parentId: id,
+          prefixLength: 24,
+          records: records,
+          limit: 1);
+      final first = inBlock('block-1', '10.40.0.0/16');
+      expect(first.summary.freeSlots, BigInt.from(256));
+      expect(first.candidates.single.cidr.canonical, '10.40.0.0/24');
+      final second = inBlock('block-2', '10.41.0.0/16');
+      expect(second.summary.freeSlots, BigInt.from(255));
+      expect(second.candidates.single.cidr.canonical, '10.41.1.0/24');
+    });
+
     test('huge IPv6 totals and final address remain exact without enumeration',
         () {
       final all = AddressPlanner.plan(
@@ -449,6 +518,28 @@ void main() {
       expect(plan.candidates.first.rationale, contains('/26'));
       expect(plan.candidates.first.rationale, contains('61'));
       expect(plan.warnings.join(' '), contains('inventory'));
+    });
+
+    test('OCI demand switches prefix exactly at assignable-capacity ceilings',
+        () {
+      for (final (addresses, prefix) in [
+        (13, 28),
+        (14, 27),
+        (125, 25),
+        (126, 24),
+        (65533, 16),
+      ]) {
+        final plan = AddressPlanner.plan(
+            parent: Cidr.parse('10.0.0.0/16'),
+            routingDomain: 'corporate',
+            records: [],
+            demand: AddressDemand(
+                addresses: BigInt.from(addresses), growthPercent: 0),
+            policy: AddressPolicy.ociIpv4Subnet);
+        expect(plan.prefixLength, prefix, reason: '$addresses addresses');
+        expect(plan.candidates.first.details.assignableAddresses,
+            greaterThanOrEqualTo(BigInt.from(addresses)));
+      }
     });
 
     test('demand rejects unsupported policies and no fitting allowed prefix',

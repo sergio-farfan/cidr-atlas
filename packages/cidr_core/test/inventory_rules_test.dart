@@ -357,6 +357,142 @@ void main() {
     });
   });
 
+  group('explicit VCN parent and recorded subnet vcnId', () {
+    final placeholder = prefix('vcn-a', '10.42.0.0/16');
+    final other = prefix('vcn-b', '10.43.0.0/16', resourceId: 'ocid.vcn.b');
+    final subnet = prefix(
+      'subnet',
+      '10.42.1.0/24',
+      kind: PrefixKind.subnet,
+      parentId: 'vcn-a',
+      vcnId: 'ocid.vcn.b',
+    );
+
+    const advisory = 'Subnet subnet (10.42.1.0/24) has vcnId ocid.vcn.b, '
+        'which names VCN vcn-b (10.43.0.0/16, ocid.vcn.b), but its parent is '
+        'the placeholder VCN vcn-a (10.42.0.0/16) without a resource id. '
+        'Clear or change the parent of subnet.';
+
+    test('advises, without a validation error, when vcnId names another VCN',
+        () {
+      final records = [placeholder, other, subnet];
+      // A v0.3.0-valid inventory stays savable and importable.
+      expect(InventoryRules.validate(records), isEmpty);
+      expect(InventoryRules.advisories(records), [advisory]);
+      // The placeholder link keeps its v0.3.0 meaning as a hierarchy.
+      expect(InventoryRules.conflicts(records), isEmpty);
+    });
+
+    test('advisories filtered by involved ids', () {
+      final records = [
+        placeholder,
+        other,
+        subnet,
+        prefix('unrelated', '10.50.0.0/16'),
+      ];
+      for (final id in ['subnet', 'vcn-a', 'vcn-b']) {
+        expect(
+          InventoryRules.advisories(records, involving: {id}),
+          [advisory],
+          reason: id,
+        );
+      }
+      expect(InventoryRules.advisories(records, involving: {'unrelated'}),
+          isEmpty);
+      expect(InventoryRules.advisories(records, involving: {}), isEmpty);
+    });
+
+    final unrelatedNamedVcns = {
+      'another routing domain': prefix(
+        'vcn-b',
+        '10.43.0.0/16',
+        resourceId: 'ocid.vcn.b',
+        domain: 'isolated-lab',
+      ),
+      'a retired record': prefix(
+        'vcn-b',
+        '10.43.0.0/16',
+        resourceId: 'ocid.vcn.b',
+        status: PrefixStatus.retired,
+      ),
+      'another tenancy': prefix(
+        'vcn-b',
+        '10.43.0.0/16',
+        resourceId: 'ocid.vcn.b',
+        tenancy: 'tenancy-b',
+      ),
+      'another region': prefix(
+        'vcn-b',
+        '10.43.0.0/16',
+        resourceId: 'ocid.vcn.b',
+        region: 'iad',
+      ),
+    };
+    for (final MapEntry(key: label, value: named)
+        in unrelatedNamedVcns.entries) {
+      test('a VCN record from $label does not invalidate the parent', () {
+        final located = subnet.copyWith(tenancy: 'tenancy-a', region: 'phx');
+        final records = [
+          placeholder.copyWith(tenancy: 'tenancy-a', region: 'phx'),
+          named,
+          located,
+        ];
+        expect(InventoryRules.validate(records), isEmpty);
+        expect(InventoryRules.advisories(records), isEmpty);
+        expect(InventoryRules.conflicts(records), isEmpty);
+      });
+    }
+
+    test('a comparable VCN with empty tenancy and region still contradicts',
+        () {
+      final records = [
+        placeholder,
+        other,
+        subnet.copyWith(tenancy: 'tenancy-a', region: 'phx'),
+      ];
+      expect(InventoryRules.validate(records), isEmpty);
+      expect(InventoryRules.advisories(records), hasLength(1));
+    });
+
+    test('a retired parent that carries the named OCID stays valid', () {
+      final records = [
+        prefix(
+          'vcn-old',
+          '10.42.0.0/16',
+          resourceId: 'ocid.vcn.b',
+          status: PrefixStatus.retired,
+        ),
+        prefix('vcn-new', '10.44.0.0/16', resourceId: 'ocid.vcn.b'),
+        subnet.copyWith(parentId: 'vcn-old'),
+      ];
+      expect(InventoryRules.validate(records), isEmpty);
+    });
+
+    test('accepts a placeholder parent when no record carries that vcnId', () {
+      final records = [placeholder, subnet];
+      expect(InventoryRules.validate(records), isEmpty);
+      expect(InventoryRules.advisories(records), isEmpty);
+      expect(InventoryRules.conflicts(records), isEmpty);
+    });
+
+    test('accepts any block of the named multi-CIDR VCN as parent', () {
+      final records = [
+        prefix('block-1', '10.40.0.0/16', resourceId: 'ocid.vcn.m'),
+        prefix('block-2', '10.41.0.0/16', resourceId: 'ocid.vcn.m'),
+        prefix(
+          'subnet',
+          '10.41.7.0/24',
+          kind: PrefixKind.subnet,
+          parentId: 'block-2',
+          vcnId: 'ocid.vcn.m',
+        ),
+      ];
+      expect(InventoryRules.validate(records), isEmpty);
+      expect(InventoryRules.advisories(records), isEmpty);
+      expect(InventoryRules.conflicts(records), isEmpty);
+    });
+  });
+
   group('free-space planner', () {
     test('zero-limit legacy query validates selection without reading blockers',
         () {
@@ -378,6 +514,31 @@ void main() {
               parentId: 'missing',
               limit: 0),
           throwsArgumentError);
+    });
+
+    test('legacy query names a malformed blocker instead of skipping it', () {
+      List<Cidr> query(List<PrefixRecord> records) => InventoryRules.available(
+          parent: Cidr.parse('10.0.0.0/24'),
+          prefixLength: 25,
+          records: records,
+          routingDomain: 'corporate');
+      expect(
+        () => query([prefix('typo', 'zzz')]),
+        throwsA(isA<ArgumentError>().having(
+          (error) => error.message,
+          'message',
+          allOf(
+              contains('Cannot plan from invalid inventory'), contains('typo')),
+        )),
+      );
+      // Records outside the requested domain or retired are not read.
+      expect(
+        query([
+          prefix('elsewhere', 'zzz', domain: 'lab'),
+          prefix('old', 'zzz', status: PrefixStatus.retired),
+        ]).map((cidr) => cidr.canonical),
+        ['10.0.0.0/25', '10.0.0.128/25'],
+      );
     });
 
     test('finds aligned gaps and ignores only validated selected ancestry', () {

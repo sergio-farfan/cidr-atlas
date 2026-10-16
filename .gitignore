@@ -1,3 +1,7 @@
+# CIDR Atlas
+# Untracked build output, tool caches and local databases.
+# Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 .dart_tool/
 .packages
 .flutter-plugins

@@ -68,8 +68,9 @@ class OciProcessRunner {
     try {
       // Subscribe to both streams before closing stdin or awaiting process exit.
       await process.stdin.close();
-      if (command.cancellation?.isCancelled ?? false)
+      if (command.cancellation?.isCancelled ?? false) {
         interrupt('OCI request cancelled.');
+      }
       final result = await Future.any<Object>([completed, interrupted.future]);
       if (result is OciException) throw result;
       final values = result as List<Object>;

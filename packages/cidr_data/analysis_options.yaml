@@ -1,0 +1,19 @@
+# CIDR Atlas
+# Static analysis settings for the SQLite storage and import package.
+# Author: Sergio Farfan <sergio.farfan@gmail.com>
+
+include: package:lints/recommended.yaml
+
+analyzer:
+  exclude:
+    - '**/build/**'
+    - '**/.dart_tool/**'
+
+linter:
+  rules:
+    - avoid_print
+    - cancel_subscriptions
+    - close_sinks
+    - collection_methods_unrelated_type
+    - hash_and_equals
+    - unrelated_type_equality_checks

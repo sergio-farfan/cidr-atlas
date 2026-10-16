@@ -485,4 +485,398 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  group('planner input validation', () {
+    const smallVcn = PrefixRecord(
+      id: 'small-vcn',
+      cidr: '10.42.0.0/26',
+      name: 'Fictional small VCN',
+      routingDomain: 'corporate',
+      kind: PrefixKind.vcn,
+      resourceId: 'ocid1.vcn.small',
+    );
+
+    Future<void> calculate(WidgetTester tester) async {
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('planner-calculate')),
+      );
+      await tester.tap(find.byKey(const ValueKey('planner-calculate')));
+      await tester.pumpAndSettle();
+    }
+
+    void expectReadable(WidgetTester tester, String message) {
+      expect(find.textContaining(message), findsOneWidget);
+      expect(find.textContaining('RangeError'), findsNothing);
+      expect(find.textContaining('Invalid argument'), findsNothing);
+      expect(find.textContaining('Instance of'), findsNothing);
+      expect(find.byKey(const ValueKey('reserve-candidate')), findsNothing);
+      expect(tester.takeException(), isNull);
+    }
+
+    testWidgets('a prefix shorter than the pool explains the valid range', (
+      tester,
+    ) async {
+      await showPlanner(tester, records: const [smallVcn]);
+      await select(tester, 'planner-domain', 'corporate');
+      await select(
+        tester,
+        'planner-pool',
+        'Fictional small VCN (10.42.0.0/26)',
+      );
+      await calculate(tester);
+      expectReadable(
+        tester,
+        'Requested /24 does not fit the /26 pool 10.42.0.0/26; '
+        'choose /26 to /32.',
+      );
+    });
+
+    testWidgets('a prefix longer than the address family is rejected', (
+      tester,
+    ) async {
+      await showPlanner(tester);
+      await select(tester, 'planner-domain', 'corporate');
+      await select(
+        tester,
+        'planner-pool',
+        'Fictional allocation (10.42.0.0/16)',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('planner-prefix')),
+        '40',
+      );
+      await calculate(tester);
+      expectReadable(tester, 'choose /16 to /32.');
+    });
+
+    for (final (field, value, message) in [
+      ('planner-demand', '0', 'Endpoint IP demand must be at least 1'),
+      ('planner-growth', '-5', 'growth allowance cannot be negative'),
+      ('planner-additional', '-1', 'cannot be negative; enter 0 if none'),
+    ]) {
+      testWidgets('demand field $field=$value shows a readable message', (
+        tester,
+      ) async {
+        await showPlanner(tester, records: [pool, vcn]);
+        await select(tester, 'planner-domain', 'corporate');
+        await select(tester, 'planner-pool', 'Fictional VCN (10.42.0.0/20)');
+        await select(tester, 'planner-mode', 'Size from address demand');
+        await tester.enterText(
+          find.byKey(const ValueKey('planner-demand')),
+          '100',
+        );
+        await tester.enterText(
+          find.byKey(const ValueKey('planner-growth')),
+          '10',
+        );
+        await tester.enterText(find.byKey(ValueKey(field)), value);
+        await calculate(tester);
+        expectReadable(tester, message);
+      });
+    }
+  });
+
+  testWidgets('narrow free gaps are painted above blocked space', (
+    tester,
+  ) async {
+    // One /28 hole in an otherwise blocked /16: under 1 px at map width.
+    await showPlanner(
+      tester,
+      records: const [
+        pool,
+        PrefixRecord(
+          id: 'low',
+          cidr: '10.42.0.0/17',
+          name: 'Fictional low half',
+          routingDomain: 'corporate',
+          parentId: 'pool',
+        ),
+        PrefixRecord(
+          id: 'gap-neighbour',
+          cidr: '10.42.128.16/28',
+          name: 'Fictional neighbour',
+          routingDomain: 'corporate',
+          parentId: 'pool',
+        ),
+        PrefixRecord(
+          id: 'gap-neighbour-2',
+          cidr: '10.42.128.32/27',
+          name: 'Fictional neighbour 2',
+          routingDomain: 'corporate',
+          parentId: 'pool',
+        ),
+        PrefixRecord(
+          id: 'gap-neighbour-3',
+          cidr: '10.42.128.64/26',
+          name: 'Fictional neighbour 3',
+          routingDomain: 'corporate',
+          parentId: 'pool',
+        ),
+        PrefixRecord(
+          id: 'gap-neighbour-4',
+          cidr: '10.42.128.128/25',
+          name: 'Fictional neighbour 4',
+          routingDomain: 'corporate',
+          parentId: 'pool',
+        ),
+        PrefixRecord(
+          id: 'gap-neighbour-5',
+          cidr: '10.42.129.0/24',
+          name: 'Fictional neighbour 5',
+          routingDomain: 'corporate',
+          parentId: 'pool',
+        ),
+        PrefixRecord(
+          id: 'gap-neighbour-6',
+          cidr: '10.42.130.0/23',
+          name: 'Fictional neighbour 6',
+          routingDomain: 'corporate',
+          parentId: 'pool',
+        ),
+        PrefixRecord(
+          id: 'gap-neighbour-7',
+          cidr: '10.42.132.0/22',
+          name: 'Fictional neighbour 7',
+          routingDomain: 'corporate',
+          parentId: 'pool',
+        ),
+        PrefixRecord(
+          id: 'gap-neighbour-8',
+          cidr: '10.42.136.0/21',
+          name: 'Fictional neighbour 8',
+          routingDomain: 'corporate',
+          parentId: 'pool',
+        ),
+        PrefixRecord(
+          id: 'gap-neighbour-9',
+          cidr: '10.42.144.0/20',
+          name: 'Fictional neighbour 9',
+          routingDomain: 'corporate',
+          parentId: 'pool',
+        ),
+        PrefixRecord(
+          id: 'high',
+          cidr: '10.42.160.0/19',
+          name: 'Fictional high block',
+          routingDomain: 'corporate',
+          parentId: 'pool',
+        ),
+        PrefixRecord(
+          id: 'top',
+          cidr: '10.42.192.0/18',
+          name: 'Fictional top block',
+          routingDomain: 'corporate',
+          parentId: 'pool',
+        ),
+      ],
+    );
+    await select(tester, 'planner-domain', 'corporate');
+    await select(tester, 'planner-pool', 'Fictional allocation (10.42.0.0/16)');
+    await tester.enterText(find.byKey(const ValueKey('planner-prefix')), '28');
+    await tester.ensureVisible(find.byKey(const ValueKey('planner-calculate')));
+    await tester.tap(find.byKey(const ValueKey('planner-calculate')));
+    await tester.pumpAndSettle();
+    expect(find.text('10.42.128.0/28'), findsWidgets);
+
+    final paint = tester.widget<CustomPaint>(
+      find.byKey(const ValueKey('address-map')),
+    );
+    final size = tester.getSize(find.byKey(const ValueKey('address-map')));
+    final canvas = _RecordingCanvas();
+    paint.painter!.paint(canvas, size);
+    bool freeColor(Color color) => color.toARGB32() & 0xffffff == 0x77d8b4;
+    bool blockedColor(Color color) => color.toARGB32() & 0xffffff == 0xdbc18b;
+    final lastBlocked = canvas.rects.lastIndexWhere(
+      (entry) => blockedColor(entry.$2),
+    );
+    final free = canvas.rects.indexWhere((entry) => freeColor(entry.$2));
+    expect(lastBlocked, greaterThanOrEqualTo(0));
+    expect(free, greaterThan(lastBlocked));
+    final marker = canvas.rects[free];
+    expect(marker.$1.width, greaterThanOrEqualTo(2));
+    expect(marker.$2.a, greaterThan(0.9));
+    expect(tester.takeException(), isNull);
+  });
+
+  group('address map zoom', () {
+    double candidateCentre(WidgetTester tester, double width) {
+      final text = tester
+          .widget<Text>(
+            find.descendant(
+              of: find.byKey(const ValueKey('candidate-0')),
+              matching: find.byType(Text),
+            ),
+          )
+          .data!;
+      final cidr = Cidr.parse(text);
+      final parent = Cidr.parse('10.42.0.0/16');
+      double x(BigInt address) =>
+          ((address - parent.networkAddress).toDouble() /
+                  parent.addressCount.toDouble() *
+                  width)
+              .clamp(0, width);
+      final start = x(cidr.networkAddress);
+      final w = x(cidr.lastAddress + BigInt.one) - start;
+      final rectWidth = w < 4 ? 4.0 : w;
+      final left = start < width - rectWidth ? start : width - rectWidth;
+      return left + rectWidth / 2;
+    }
+
+    testWidgets('zoom keeps the selected candidate at its screen position', (
+      tester,
+    ) async {
+      await showPlanner(tester, size: const Size(1440, 900));
+      await plan(tester);
+      final width = tester.getSize(find.byType(InteractiveViewer)).width;
+      final centre = candidateCentre(tester, width);
+      final viewer = tester.widget<InteractiveViewer>(
+        find.byType(InteractiveViewer),
+      );
+      await tester.ensureVisible(find.byTooltip('Zoom in'));
+      await tester.tap(find.byTooltip('Zoom in'));
+      await tester.pump();
+      final matrix = viewer.transformationController!.value;
+      expect(matrix.entry(0, 0), closeTo(1.5, 1e-9));
+      // The address axis is magnified; the bar keeps its height.
+      expect(matrix.entry(1, 1), 1);
+      final transformed = matrix.entry(0, 0) * centre + matrix.entry(0, 3);
+      expect(transformed, closeTo(centre, 1));
+      // Panning the axis-only magnification stays within the viewer.
+      await tester.drag(find.byType(InteractiveViewer), const Offset(-120, 0));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('zoom to candidate centres it and replaces the Fit duplicate', (
+      tester,
+    ) async {
+      await showPlanner(tester, size: const Size(1440, 900));
+      await plan(tester);
+      expect(find.text('Fit'), findsNothing);
+      final width = tester.getSize(find.byType(InteractiveViewer)).width;
+      final centre = candidateCentre(tester, width);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('map-zoom-candidate')),
+      );
+      await tester.tap(find.byKey(const ValueKey('map-zoom-candidate')));
+      await tester.pump();
+      final matrix = tester
+          .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+          .transformationController!
+          .value;
+      final scale = matrix.entry(0, 0);
+      expect(scale, greaterThan(1.5));
+      final transformed = scale * centre + matrix.entry(0, 3);
+      expect(transformed, greaterThanOrEqualTo(0));
+      expect(transformed, lessThanOrEqualTo(width));
+      // Centred unless the view is clamped at the end of the address space.
+      final clampedAtEdge =
+          matrix.entry(0, 3).abs() < 1e-6 ||
+          (matrix.entry(0, 3) - (width - scale * width)).abs() < 1e-6;
+      if (!clampedAtEdge) expect(transformed, closeTo(width / 2, 1));
+      await tester.tap(find.byTooltip('Reset view'));
+      await tester.pump();
+      expect(matrix.getMaxScaleOnAxis(), isNot(1));
+      expect(
+        tester
+            .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+            .transformationController!
+            .value
+            .getMaxScaleOnAxis(),
+        1,
+      );
+    });
+  });
+
+  testWidgets('candidate selection is exposed to assistive technology', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await showPlanner(tester);
+    await plan(tester);
+    await tester.ensureVisible(find.byKey(const ValueKey('candidate-1')));
+    await tester.tap(find.byKey(const ValueKey('candidate-1')));
+    await tester.pumpAndSettle();
+    final selected = tester.getSemantics(
+      find.byKey(const ValueKey('candidate-1')),
+    );
+    expect(selected, isSemantics(isSelected: true, isButton: true));
+    expect(selected.label, contains('Candidate 2 of 12'));
+    expect(
+      tester.getSemantics(find.byKey(const ValueKey('candidate-0'))),
+      isNot(isSemantics(isSelected: true)),
+    );
+    semantics.dispose();
+  });
+
+  testWidgets('supplied conflicts mark the hierarchy without a rescan', (
+    tester,
+  ) async {
+    // The planner trusts the controller's conflicts for this inventory.
+    const records = [pool, vcn];
+    tester.view.physicalSize = const Size(1100, 740);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VisualPlanner(
+            records: records,
+            conflicts: [
+              Conflict(first: pool, second: vcn, reason: 'Fictional conflict'),
+            ],
+            onReserve: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Conflict: overlapping records'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('results survive rebuilds until the inventory list changes', (
+    tester,
+  ) async {
+    final records = [pool, vcn];
+    var list = records;
+    late StateSetter rebuild;
+    tester.view.physicalSize = const Size(1440, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              return VisualPlanner(records: list, onReserve: (_) {});
+            },
+          ),
+        ),
+      ),
+    );
+    await plan(tester);
+    expect(find.byKey(const ValueKey('reserve-candidate')), findsOneWidget);
+    rebuild(() {});
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('reserve-candidate')), findsOneWidget);
+    rebuild(() => list = [...records]);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('reserve-candidate')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+/// Records rectangles drawn by a painter, ignoring every other call.
+class _RecordingCanvas implements Canvas {
+  final rects = <(Rect, Color)>[];
+
+  @override
+  void drawRect(Rect rect, Paint paint) => rects.add((rect, paint.color));
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
 }

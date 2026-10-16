@@ -1,3 +1,7 @@
+# CIDR Atlas
+# Core CIDR arithmetic and inventory rules package metadata and dependencies.
+# Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 name: cidr_core
 description: Shared, platform-independent CIDR planning and inventory rules.
 version: 0.1.0

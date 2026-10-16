@@ -52,6 +52,11 @@ class FakeOciInventoryClient implements OciInventoryClient {
   bool allRegions = false;
   bool allCompartments = false;
   int calls = 0;
+  List<OciDiscoveryProgress> progress = [
+    const OciDiscoveryProgress(
+        message: 'Reading fictional subnets',
+        collectionTimeout: OciCollectionLimits.singleScope),
+  ];
 
   @override
   Future<OciConnection> connection(
@@ -79,14 +84,18 @@ class FakeOciInventoryClient implements OciInventoryClient {
       String? compartmentId,
       bool allCompartments = false,
       OciCancellation? cancellation,
-      void Function(String)? onProgress}) async {
+      void Function(String)? onProgress,
+      void Function(OciDiscoveryProgress)? onDiscoveryProgress}) async {
     calls++;
     selectedRegions = regions;
     selectedRegion = regions.firstOrNull;
     this.allRegions = allRegions;
     this.allCompartments = allCompartments;
     selectedCompartment = compartmentId;
-    onProgress?.call('Reading fictional subnets');
+    for (final event in progress) {
+      onProgress?.call(event.message);
+      onDiscoveryProgress?.call(event);
+    }
     duringDiscovery?.call(cancellation!);
     if (failure != null) throw failure!;
     if (unexpectedFailure != null) throw unexpectedFailure!;
@@ -164,6 +173,7 @@ void main() {
         '--config-file',
         '--oci-bin',
         '--auth',
+        '--collection-timeout',
         '--apply'
       ]) {
         expect(result.output, contains(flag));
@@ -502,5 +512,210 @@ void main() {
     expect(result.code, code);
     expect(result.output, '$out');
     expect(result.error, '$err');
+  });
+
+  group('empty discovery', () {
+    String empty() => jsonEncode({
+          'metadata': {
+            'tenancy': 'fictional-tenancy',
+            'region': 'us-phoenix-1',
+            'collectedAt': '2026-10-15T12:00:00Z'
+          },
+          'vcns': [],
+          'subnets': [],
+        });
+
+    test('is a neutral success that writes nothing, with and without apply',
+        () async {
+      client.bundle = empty();
+      for (final apply in [false, true]) {
+        final result = await run([..._scope, if (apply) '--apply']);
+        expect(result.code, 0, reason: result.error);
+        expect(result.output, contains('no networks were found'));
+        expect(result.output, contains('Fictional coverage warning'));
+        expect(result.error, isNot(contains('Error:')));
+        expect(result.error, isNot(contains('cannot be applied')));
+        expect(File(database).existsSync(), isFalse);
+      }
+    });
+
+    test('leaves an existing inventory and its history unchanged', () async {
+      seed([
+        const PrefixRecord(
+            id: 'existing',
+            cidr: '192.0.2.0/24',
+            name: 'existing',
+            routingDomain: 'corporate')
+      ]);
+      final before = snapshot();
+      client.bundle = empty();
+      final result = await run([..._scope, '--apply']);
+      expect(result.code, 0, reason: result.error);
+      expect(snapshot().records.map((r) => r.id), ['existing']);
+      expect(snapshot().history, before.history);
+    });
+  });
+
+  test('database location is resolved before contacting OCI', () async {
+    final out = StringBuffer();
+    final err = StringBuffer();
+    final code = await runCidrctlAsync(_scope,
+        out: out, err: err, environment: const {}, ociClient: client);
+    expect(code, 2, reason: '$err');
+    expect('$err', contains('specify --db'));
+    expect(client.calls, 0);
+
+    Directory('${temporary.path}/folder.sqlite').createSync();
+    final directory =
+        await run([..._scope, '--db', '${temporary.path}/folder.sqlite']);
+    expect(directory.code, 1);
+    expect(directory.error, contains('folder.sqlite'));
+    expect(client.calls, 0);
+
+    File('${temporary.path}/plain-file').writeAsStringSync('not a folder');
+    final insideFile = await run(
+        [..._scope, '--db', '${temporary.path}/plain-file/inventory.sqlite']);
+    expect(insideFile.code, 1);
+    expect(client.calls, 0);
+
+    final blank = await run([..._scope, '--db', ' ']);
+    expect(blank.code, 2);
+    expect(client.calls, 0);
+  });
+
+  test('--apply with a read-only database fails before contacting OCI',
+      () async {
+    final uid = Process.runSync('id', ['-u']);
+    if ('${uid.stdout}'.trim() == '0') {
+      markTestSkipped('root can write a read-only file');
+      return;
+    }
+    seed([
+      const PrefixRecord(
+          id: 'existing',
+          cidr: '192.0.2.0/24',
+          name: 'existing',
+          routingDomain: 'corporate')
+    ]);
+    // Process.runSync passes arguments directly; no shell is involved.
+    final chmod = Process.runSync('chmod', ['400', database]);
+    expect(chmod.exitCode, 0, reason: '${chmod.stderr}');
+    addTearDown(() => Process.runSync('chmod', ['600', database]));
+
+    final apply = await run([..._scope, '--apply']);
+    expect(apply.code, 1, reason: apply.error);
+    expect(apply.error, contains('inventory.sqlite'));
+    expect(client.calls, 0);
+
+    // A preview does not write, so it is not refused before collection.
+    await run(_scope);
+    expect(client.calls, greaterThan(0));
+  }, testOn: '!windows');
+
+  test('collection timeout is validated before contacting OCI', () async {
+    for (final value in ['0', '29', '86401', '-1', 'abc', '1e3', '60.5', ' ']) {
+      final result = await run([..._scope, '--collection-timeout', value]);
+      expect(result.code, 2, reason: value);
+      expect(result.error, contains('--collection-timeout'));
+    }
+    expect(client.calls, 0);
+    final accepted = await run([..._scope, '--collection-timeout', '3600']);
+    expect(accepted.code, 0, reason: accepted.error);
+  });
+
+  test('progress names configuration, profile and scope count on stderr',
+      () async {
+    client.progress = [
+      for (final (message, scopes, completed) in [
+        ('Loading accessible active compartments and descendants', null, 0),
+        (
+          'Loading VCN list in region us-phoenix-1, compartment c1 '
+              '(scope 1/6; 0 completed)',
+          6,
+          0
+        ),
+        (
+          'Loading subnet list in region us-phoenix-1, compartment c1 '
+              '(scope 1/6; 0 completed)',
+          6,
+          0
+        ),
+        (
+          'Loading VCN list in region us-phoenix-1, compartment c2 '
+              '(scope 2/6; 1 completed)',
+          6,
+          1
+        ),
+      ])
+        OciDiscoveryProgress(
+            message: message,
+            scopeCount: scopes,
+            completedScopes: completed,
+            collectionTimeout: OciCollectionLimits.broadScope),
+    ];
+    final result = await run([
+      'discover',
+      'oci',
+      '--profile',
+      'FICTIONAL',
+      '--all-regions',
+      '--all-compartments',
+      '--routing-domain',
+      'corporate',
+      '--collection-timeout',
+      '7200',
+    ]);
+    expect(result.code, 0, reason: result.error);
+    expect(
+        result.error,
+        contains('Using OCI configuration /fictional/config, '
+            'profile FICTIONAL (api_key authentication).'));
+    expect(
+        'Collecting 6 region/compartment scopes with 12 sequential list '
+                'requests within the 7200-second collection limit.'
+            .allMatches(result.error),
+        hasLength(1));
+    final lines = result.error.split('\n');
+    expect(lines.indexWhere((line) => line.startsWith('Collecting 6')),
+        lessThan(lines.indexWhere((line) => line.contains('scope 1/6'))));
+    expect(result.output, isNot(contains('/fictional/config')));
+    expect(result.output, isNot(contains('Collecting')));
+  });
+
+  test('scope count line states the default limit the adapter reports',
+      () async {
+    client.progress = [
+      const OciDiscoveryProgress(
+          message: 'Resolving region keys from region subscriptions',
+          collectionTimeout: OciCollectionLimits.broadScope),
+      OciDiscoveryProgress(
+          message: 'Loading VCN list in region us-phoenix-1, compartment '
+              'fictional-compartment (scope 1/1; 0 completed)',
+          scopeCount: 1,
+          collectionTimeout: OciCollectionLimits.singleScope),
+    ];
+    final result = await run(_scope);
+    expect(result.code, 0, reason: result.error);
+    expect(
+        'Collecting 1 region/compartment scope with 2 sequential list '
+                'requests within the 180-second default collection limit.'
+            .allMatches(result.error),
+        hasLength(1));
+    // Both adapter lines are still relayed.
+    expect(result.error, contains('Resolving region keys'));
+    expect(result.error, contains('(scope 1/1; 0 completed)'));
+  });
+
+  test('new inventory and unknown routing domain warn without changing exit',
+      () async {
+    final created = await run([..._scope, '--apply']);
+    expect(created.code, 0, reason: created.error);
+    expect(created.error, contains('created a new empty inventory'));
+    final again = await run([
+      ...[..._scope]..[_scope.indexOf('corporate')] = 'Corporate',
+    ]);
+    expect(again.code, 0, reason: again.error);
+    expect(again.error, isNot(contains('created a new empty inventory')));
+    expect(again.error, contains('Did you mean: corporate?'));
   });
 }

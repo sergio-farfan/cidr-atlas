@@ -6,6 +6,22 @@ import 'package:cidr_core/cidr_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+/// The capacity policy for inspecting a saved [record], shared by the
+/// inventory details pane and the planner.
+///
+/// A subnet uses the OCI IPv4 subnet policy when it is observed from OCI,
+/// names a VCN OCID, or declares a VCN [parent], so planner-reserved OCI
+/// subnets keep the assignable capacity their rationale cites. The policy
+/// itself reports that it does not apply to IPv6 subnets. Everything else
+/// uses the generic policy, which does not assume provider capacity.
+AddressPolicy inspectionPolicy(PrefixRecord record, {PrefixRecord? parent}) =>
+    record.kind == PrefixKind.subnet &&
+        (record.source == 'oci' ||
+            record.vcnId.isNotEmpty ||
+            parent?.kind == PrefixKind.vcn)
+    ? AddressPolicy.ociIpv4Subnet
+    : AddressPolicy.generic;
+
 /// Exact CIDR details shared by inventory and planning selections.
 class CidrInspector extends StatefulWidget {
   const CidrInspector({

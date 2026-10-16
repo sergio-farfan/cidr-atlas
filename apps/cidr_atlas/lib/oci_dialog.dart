@@ -1,6 +1,8 @@
 // CIDR Atlas explicit OCI profile, scope, and inventory discovery dialog.
 // Author: Sergio Farfan <sergio.farfan@gmail.com>
 
+import 'dart:async';
+
 import 'package:cidr_oci/cidr_oci.dart';
 import 'package:flutter/material.dart';
 
@@ -17,10 +19,36 @@ class OciImportSelection {
   final List<String> warnings;
 }
 
+/// Creates an OCI discovery client bounded by an optional whole-collection
+/// time limit; null keeps the adapter default.
+typedef OciClientFactory = OciInventoryClient Function({
+  Duration? collectionTimeout,
+});
+
 class OciDiscoveryDialog extends StatefulWidget {
-  const OciDiscoveryDialog({super.key, this.client, this.domain});
+  const OciDiscoveryDialog({
+    super.key,
+    this.client,
+    this.domain,
+    this.clientFactory,
+  });
   final OciInventoryClient? client;
   final String? domain;
+
+  /// Creates the discovery client when a collection time limit is entered,
+  /// and the metadata client when no [client] is injected. Defaults to
+  /// [defaultClientFactory]. An injected [client] without a factory cannot
+  /// take the limit itself, so the dialog enforces an entered limit by
+  /// cancelling that client's discovery when it expires.
+  final OciClientFactory? clientFactory;
+
+  /// The production client: the installed OCI CLI.
+  static OciInventoryClient defaultClientFactory({
+    Duration? collectionTimeout,
+  }) => OciCliClient(collectionTimeout: collectionTimeout);
+
+  /// Upper bound for the optional collection time limit, in minutes.
+  static const maxCollectionMinutes = 1440;
 
   @override
   State<OciDiscoveryDialog> createState() => _OciDiscoveryDialogState();
@@ -32,6 +60,7 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
   final _executable = TextEditingController();
   final _region = TextEditingController();
   final _compartment = TextEditingController();
+  final _timeout = TextEditingController();
   late final TextEditingController _domain;
   late final OciInventoryClient _client;
   List<OciProfile> _profiles = [];
@@ -40,6 +69,7 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
   OciProfile? _profile;
   OciAuthMode _auth = OciAuthMode.apiKey;
   OciCancellation? _active;
+  Timer? _collectionLimit;
   int _metadataRequest = 0;
   int _scopeRevision = 0;
   bool _loadingProfiles = true;
@@ -57,12 +87,16 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
   @override
   void initState() {
     super.initState();
-    _client = widget.client ?? OciCliClient();
+    _client =
+        widget.client ??
+        (widget.clientFactory ?? OciDiscoveryDialog.defaultClientFactory)();
     _domain = TextEditingController(text: widget.domain ?? '');
     _loadProfiles();
   }
 
   void _cancel() {
+    _collectionLimit?.cancel();
+    _collectionLimit = null;
     _active?.cancel();
     _active = null;
   }
@@ -76,6 +110,7 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
       _executable,
       _region,
       _compartment,
+      _timeout,
       _domain,
     ]) {
       field.dispose();
@@ -89,15 +124,20 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
     _clearScopes();
   }
 
-  void _clearScopes() {
+  /// Clears loaded selectors. Typed manual scope is kept when
+  /// [keepManualScope] is set, such as after an authentication change within
+  /// the same profile and tenancy.
+  void _clearScopes({bool keepManualScope = false}) {
     _scopeRevision++;
     _regions = [];
     _compartments = [];
     _additionalRegions.clear();
     _allRegions = false;
     _allCompartments = false;
-    _region.text = _profile?.region ?? '';
-    _compartment.clear();
+    if (!(keepManualScope && _manual)) {
+      _region.text = _profile?.region ?? '';
+      _compartment.clear();
+    }
     _error = null;
   }
 
@@ -179,16 +219,32 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
         cancellation: cancellation,
       );
       if (!_current(cancellation)) return;
+      final children =
+          compartments.where((item) => item.id != connection.tenancyId).toList()
+            ..sort((a, b) {
+              final folded = a.displayPath.toLowerCase().compareTo(
+                b.displayPath.toLowerCase(),
+              );
+              return folded != 0 ? folded : a.id.compareTo(b.id);
+            });
       setState(() {
         _scopeRevision++;
         _regions = regions;
-        _additionalRegions.clear();
-        _region.text = selected?.name ?? '';
         _compartments = [
-          OciCompartment(id: connection.tenancyId, name: 'Tenancy root'),
-          ...compartments.where((item) => item.id != connection.tenancyId),
+          OciCompartment(
+            id: connection.tenancyId,
+            name: 'Tenancy root',
+            path: 'Tenancy root',
+          ),
+          ...children,
         ];
-        _compartment.text = connection.tenancyId;
+        // Typed manual scope stays exactly as entered; only the selector
+        // lists are refreshed.
+        if (!_manual) {
+          _additionalRegions.clear();
+          _region.text = selected?.name ?? '';
+          _compartment.text = connection.tenancyId;
+        }
       });
     } catch (error) {
       if (_current(cancellation)) setState(() => _error = _message(error));
@@ -199,14 +255,36 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
 
   Future<void> _discover() async {
     if (!_form.currentState!.validate()) return;
+    // The limit sits in a collapsible section whose field may not be built.
+    final timeoutError = _timeoutValidation(_timeout.text);
+    if (timeoutError != null) {
+      setState(() => _error = timeoutError);
+      return;
+    }
     final regions = _allRegions ? <String>[] : _selectedRegions;
     final compartment = _compartment.text.trim();
     final domain = _domain.text.trim();
+    final timeout = _collectionTimeout;
     final cancellation = _start('Starting OCI inventory discovery');
+    if (timeout != null && _injectedWithoutFactory) {
+      _collectionLimit?.cancel();
+      _collectionLimit = Timer(timeout, () {
+        if (!_current(cancellation)) return;
+        cancellation.cancel();
+        setState(() {
+          _active = null;
+          _error =
+              'OCI discovery did not finish within the '
+              '${timeout.inMinutes}-minute collection time limit. No '
+              'inventory was returned; retry a smaller scope or raise the '
+              'limit.';
+        });
+      });
+    }
     try {
       final connection = await _connection();
       if (!_current(cancellation)) return;
-      final discovery = await _client.discover(
+      final discovery = await _discoveryClient(timeout).discover(
         connection,
         regions: regions,
         allRegions: _allRegions,
@@ -217,7 +295,9 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
           if (_current(cancellation)) setState(() => _progress = message);
         },
       );
-      if (!_current(cancellation)) return;
+      // `_current` already checks `mounted`; the explicit check lets the
+      // analyzer see that `context` is still valid after the await.
+      if (!mounted || !_current(cancellation)) return;
       Navigator.pop(
         context,
         OciImportSelection(
@@ -229,8 +309,44 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
     } catch (error) {
       if (_current(cancellation)) setState(() => _error = _message(error));
     } finally {
+      if (identical(_active, cancellation)) {
+        _collectionLimit?.cancel();
+        _collectionLimit = null;
+      }
       if (_current(cancellation)) setState(() => _active = null);
     }
+  }
+
+  bool get _injectedWithoutFactory =>
+      widget.client != null && widget.clientFactory == null;
+
+  /// The optional collection time limit; null keeps the adapter default.
+  Duration? get _collectionTimeout {
+    final minutes = int.tryParse(_timeout.text.trim());
+    return minutes == null ? null : Duration(minutes: minutes);
+  }
+
+  /// The client for one discovery. An entered limit goes to the factory;
+  /// an injected client without one keeps [_client] under the dialog's own
+  /// deadline (see [_discover]).
+  OciInventoryClient _discoveryClient(Duration? timeout) {
+    if (timeout == null || _injectedWithoutFactory) return _client;
+    return (widget.clientFactory ?? OciDiscoveryDialog.defaultClientFactory)(
+      collectionTimeout: timeout,
+    );
+  }
+
+  String? _timeoutValidation(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) return null;
+    final minutes = int.tryParse(text);
+    if (minutes == null ||
+        minutes < 1 ||
+        minutes > OciDiscoveryDialog.maxCollectionMinutes) {
+      return 'Enter whole minutes from 1 to '
+          '${OciDiscoveryDialog.maxCollectionMinutes}, or leave blank.';
+    }
+    return null;
   }
 
   List<String> get _selectedRegions => {
@@ -347,7 +463,10 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
                   ),
                   if (_profile != null) ...[
                     const SizedBox(height: 12),
-                    SelectableText(_profile!.tenancyId),
+                    Semantics(
+                      label: 'Tenancy OCID',
+                      child: SelectableText(_profile!.tenancyId),
+                    ),
                     Text('Default region: ${_profile!.region}'),
                   ],
                   const SizedBox(height: 18),
@@ -372,7 +491,7 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
                         ? null
                         : (value) => setState(() {
                             _auth = value!;
-                            _clearScopes();
+                            _clearScopes(keepManualScope: true);
                           }),
                   ),
                   ExpansionTile(
@@ -403,6 +522,23 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
                       TextButton(
                         onPressed: _busy ? null : _loadProfiles,
                         child: const Text('Reload profiles'),
+                      ),
+                      const SizedBox(height: 6),
+                      TextFormField(
+                        key: const ValueKey('oci-collection-timeout'),
+                        controller: _timeout,
+                        enabled: !_busy,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText:
+                              'Collection time limit, minutes (optional)',
+                          helperText:
+                              'Blank keeps the default: 3 minutes for one region '
+                              'and compartment, 30 minutes for broader scopes. '
+                              'A timeout returns no partial inventory.',
+                          helperMaxLines: 3,
+                        ),
+                        validator: _timeoutValidation,
                       ),
                     ],
                   ),
@@ -572,15 +708,31 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
                             DropdownMenuItem(
                               value: compartment.id,
                               child: Text(
-                                compartment.name,
+                                compartment.displayPath,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
                         ],
                         onChanged: _busy
                             ? null
-                            : (value) => _compartment.text = value ?? '',
+                            : (value) => setState(
+                                () => _compartment.text = value ?? '',
+                              ),
                         validator: (value) => _required(value, 'Compartment'),
+                      ),
+                    // Only a compartment the selector actually shows; a typed
+                    // OCID that is not in the loaded list leaves it empty.
+                    if (!_manual &&
+                        _compartments.any(
+                          (compartment) => compartment.id == _compartment.text,
+                        ))
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: SelectableText(
+                          'Compartment OCID: ${_compartment.text}',
+                          key: const ValueKey('oci-compartment-ocid'),
+                          style: const TextStyle(fontSize: 12),
+                        ),
                       ),
                   ],
                   const SizedBox(height: 18),
@@ -588,10 +740,13 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
                   if (_error != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 16),
-                      child: Text(
-                        _error!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
+                      child: Semantics(
+                        liveRegion: true,
+                        child: Text(
+                          _error!,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
                         ),
                       ),
                     ),
@@ -599,10 +754,13 @@ class _OciDiscoveryDialogState extends State<OciDiscoveryDialog> {
                     const SizedBox(height: 16),
                     const LinearProgressIndicator(),
                     const SizedBox(height: 10),
-                    Text(
-                      _loadingProfiles
-                          ? 'Reading profile metadata'
-                          : _progress ?? 'Working',
+                    Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        _loadingProfiles
+                            ? 'Reading profile metadata'
+                            : _progress ?? 'Working',
+                      ),
                     ),
                   ],
                 ],

@@ -209,17 +209,20 @@ void main() {
     final client = OciCliClient(runner: (command) async {
       commands.add(command);
       final args = operation(command);
-      if (args[1] == 'compartment')
+      if (args[1] == 'compartment') {
         return response([
           {'id': child, 'name': 'Child'},
           {'id': nested, 'name': 'Nested'}
         ]);
-      if (args[2] == 'get')
+      }
+      if (args[2] == 'get') {
         fail(
             'Known VCN from another collected compartment must not be fetched');
+      }
       final selected = option(command, '--compartment-id');
-      if (args[1] == 'vcn')
+      if (args[1] == 'vcn') {
         return response(selected == nested ? [vcn('shared-vcn', nested)] : []);
+      }
       return response(selected == child
           ? [subnet('child-subnet', child, 'shared-vcn')]
           : []);
@@ -360,8 +363,9 @@ void main() {
       var calls = 0;
       final client = OciCliClient(runner: (_) async {
         calls++;
-        if (calls == 1)
+        if (calls == 1) {
           await Future<void>.delayed(const Duration(milliseconds: 30));
+        }
         return response([]);
       });
       await runZoned(
@@ -375,7 +379,7 @@ void main() {
           final accelerated = duration == const Duration(seconds: 180)
               ? const Duration(milliseconds: 10)
               : duration == const Duration(seconds: 1800)
-                  ? const Duration(milliseconds: 150)
+                  ? const Duration(seconds: 2)
                   : duration;
           return parent.createTimer(zone, accelerated, callback);
         },
@@ -395,10 +399,11 @@ void main() {
     final commands = <OciCommand>[];
     final client = OciCliClient(runner: (command) async {
       commands.add(command);
-      if (operation(command)[1] == 'region-subscription')
+      if (operation(command)[1] == 'region-subscription') {
         return response([
           {'region-name': 'us-phoenix-1', 'status': 'READY'}
         ]);
+      }
       return response([]);
     });
     final result = await client.discover(connection,
@@ -449,5 +454,306 @@ void main() {
         throwsA(isA<OciException>()
             .having((e) => e.message, 'cancelled', contains('cancelled'))));
     expect(commands.length, 2);
+  });
+
+  OciCommandResult subscriptions() => response([
+        {
+          'region-key': 'IAD',
+          'region-name': 'us-ashburn-1',
+          'status': 'READY',
+          'is-home-region': true
+        },
+        {
+          'region-key': 'PHX',
+          'region-name': 'us-phoenix-1',
+          'status': 'READY',
+          'is-home-region': false
+        },
+      ]);
+
+  test('region subscriptions expose the optional region key', () async {
+    final client = OciCliClient(runner: (_) async => subscriptions());
+    final regions = await client.regions(connection);
+    expect(regions.map((region) => region.key), ['IAD', 'PHX']);
+    expect(const OciRegion(name: 'us-ashburn-1', status: 'READY').key, isNull);
+  });
+
+  test('region key and full identifier for one region collect it once',
+      () async {
+    final commands = <OciCommand>[];
+    final client = OciCliClient(runner: (command) async {
+      commands.add(command);
+      if (operation(command)[1] == 'region-subscription') {
+        return subscriptions();
+      }
+      return response(operation(command)[1] == 'vcn'
+          ? [vcn('ocid1.vcn.oc1.iad.fictional', child)]
+          : [
+              subnet('ocid1.subnet.oc1.iad.fictional', child,
+                  'ocid1.vcn.oc1.iad.fictional')
+            ]);
+    });
+    final discovery = await client.discover(connection,
+        regions: ['IAD', 'us-ashburn-1'], compartmentId: child);
+    final bundle = jsonDecode(discovery.bundleJson);
+    final lists =
+        commands.where((c) => operation(c).first == 'network').toList();
+    expect(lists.map((c) => option(c, '--region')),
+        ['us-ashburn-1', 'us-ashburn-1']);
+    expect(bundle['metadata']['region'], 'us-ashburn-1');
+    expect(bundle['metadata']['regions'], ['us-ashburn-1']);
+    expect(bundle['metadata']['scopeCount'], 1);
+    expect([...bundle['vcns'], ...bundle['subnets']].map((r) => r['region']),
+        ['us-ashburn-1', 'us-ashburn-1']);
+  });
+
+  group('collection limit after region key resolution', () {
+    Future<OciCommandResult> aliasRunner(OciCommand command,
+        {Duration vcnDelay = Duration.zero}) async {
+      if (operation(command)[1] == 'region-subscription') {
+        return subscriptions();
+      }
+      if (operation(command)[1] == 'vcn') {
+        await Future<void>.delayed(vcnDelay);
+      }
+      return response([]);
+    }
+
+    test('a key and its full identifier keep the single-scope limit', () async {
+      final client = OciCliClient(
+          runner: (command) =>
+              aliasRunner(command, vcnDelay: const Duration(milliseconds: 30)));
+      await expectLater(
+          runZoned(
+              () => client.discover(connection,
+                  regions: ['IAD', 'us-ashburn-1'],
+                  compartmentId: child), zoneSpecification: ZoneSpecification(
+            createTimer: (self, parent, zone, duration, callback) {
+              // The single-scope limit restarts with the time remaining, so
+              // accelerate anything just under 180 s; keep 1800 s long.
+              final accelerated = duration > const Duration(seconds: 170) &&
+                      duration <= OciCollectionLimits.singleScope
+                  ? const Duration(milliseconds: 10)
+                  : duration == OciCollectionLimits.broadScope
+                      ? const Duration(seconds: 2)
+                      : duration;
+              return parent.createTimer(zone, accelerated, callback);
+            },
+          )),
+          throwsA(isA<OciException>().having(
+              (e) => e.message, 'collection bound', contains('timed out'))));
+    });
+
+    test('structured progress reports the resolved scope count and limit',
+        () async {
+      final details = <OciDiscoveryProgress>[];
+      final lines = <String>[];
+      await OciCliClient(runner: aliasRunner).discover(connection,
+          regions: ['IAD', 'us-ashburn-1'],
+          compartmentId: child,
+          onProgress: lines.add,
+          onDiscoveryProgress: details.add);
+      expect(details.map((detail) => detail.message), lines);
+      final scoped = details.where((detail) => detail.scopeCount != null);
+      expect(scoped, isNotEmpty);
+      expect(scoped.map((detail) => detail.scopeCount).toSet(), {1});
+      expect(scoped.map((detail) => detail.collectionTimeout).toSet(),
+          {OciCollectionLimits.singleScope});
+    });
+
+    test('distinct regions report the broad limit and per-scope wording',
+        () async {
+      final details = <OciDiscoveryProgress>[];
+      await OciCliClient(runner: aliasRunner).discover(connection,
+          regions: ['PHX', 'us-ashburn-1'],
+          compartmentId: child,
+          onDiscoveryProgress: details.add);
+      final scoped =
+          details.where((detail) => detail.scopeCount != null).toList();
+      expect(scoped.map((detail) => detail.collectionTimeout).toSet(),
+          {OciCollectionLimits.broadScope});
+      // Pins the per-scope wording frontends display.
+      expect(scoped.map((detail) => detail.message), [
+        'Loading VCN list in region us-phoenix-1, compartment $child '
+            '(scope 1/2; 0 completed)',
+        'Loading subnet list in region us-phoenix-1, compartment $child '
+            '(scope 1/2; 0 completed)',
+        'Loading VCN list in region us-ashburn-1, compartment $child '
+            '(scope 2/2; 1 completed)',
+        'Loading subnet list in region us-ashburn-1, compartment $child '
+            '(scope 2/2; 1 completed)',
+      ]);
+      expect(scoped.map((detail) => detail.completedScopes), [0, 0, 1, 1]);
+    });
+
+    test('an explicit collection timeout is the reported limit', () async {
+      final details = <OciDiscoveryProgress>[];
+      await OciCliClient(
+              runner: aliasRunner,
+              collectionTimeout: const Duration(seconds: 45))
+          .discover(connection,
+              regions: ['us-ashburn-1'],
+              compartmentId: child,
+              onDiscoveryProgress: details.add);
+      expect(details, isNotEmpty);
+      expect(details.map((detail) => detail.collectionTimeout).toSet(),
+          {const Duration(seconds: 45)});
+    });
+  });
+
+  test('case variants of full region identifiers are canonical lowercase',
+      () async {
+    final commands = <OciCommand>[];
+    final client = OciCliClient(runner: (command) async {
+      commands.add(command);
+      return response(
+          operation(command)[1] == 'vcn' ? [vcn('vcn-gov', child)] : []);
+    });
+    final discovery = await client.discover(connection,
+        regions: [' US-Gov-Ashburn-1 ', 'us-gov-ashburn-1'],
+        compartmentId: child);
+    expect(commands.map((c) => option(c, '--region')),
+        ['us-gov-ashburn-1', 'us-gov-ashburn-1']);
+    expect(jsonDecode(discovery.bundleJson)['vcns'].single['region'],
+        'us-gov-ashburn-1');
+  });
+
+  test('a lone lowercase region key is resolved from subscriptions', () async {
+    final client = OciCliClient(runner: (command) async {
+      if (operation(command)[1] == 'region-subscription') {
+        expect(option(command, '--region'), 'us-phoenix-1');
+        return subscriptions();
+      }
+      return response(
+          operation(command)[1] == 'vcn' ? [vcn('vcn-phx', child)] : []);
+    });
+    final discovery = await client.discover(connection,
+        regions: ['phx'], compartmentId: child);
+    final bundle = jsonDecode(discovery.bundleJson);
+    expect(bundle['metadata']['region'], 'us-phoenix-1');
+    expect(bundle['vcns'].single['region'], 'us-phoenix-1');
+  });
+
+  test('unknown region key is rejected before any resource request', () async {
+    final commands = <OciCommand>[];
+    final client = OciCliClient(runner: (command) async {
+      commands.add(command);
+      return subscriptions();
+    });
+    await expectLater(
+        client.discover(connection,
+            regions: ['us-ashburn-1', 'fra'], compartmentId: child),
+        throwsA(isA<OciException>().having((e) => e.message, 'guidance',
+            allOf(contains('fra'), contains('full region identifier')))));
+    expect(commands.map((c) => operation(c).first), ['iam']);
+  });
+
+  test('region key without a profile default region is rejected with guidance',
+      () async {
+    final config = File(connection.configFile);
+    await config.writeAsString('[DEFAULT]\ntenancy=$tenancy\n');
+    var calls = 0;
+    final client = OciCliClient(runner: (_) async {
+      calls++;
+      return subscriptions();
+    });
+    await expectLater(
+        client.discover(connection, regions: ['iad'], compartmentId: child),
+        throwsA(isA<OciException>().having((e) => e.message, 'guidance',
+            allOf(contains('iad'), contains('us-ashburn-1')))));
+    expect(calls, 0);
+  });
+
+  for (final region in ['us ashburn 1', 'ashburn', 'us-ashburn', 'ia', 'i-1']) {
+    test('malformed region "$region" is rejected without any request',
+        () async {
+      var calls = 0;
+      final client = OciCliClient(runner: (_) async {
+        calls++;
+        return subscriptions();
+      });
+      await expectLater(
+          client.discover(connection, regions: [region], compartmentId: child),
+          throwsA(isA<OciException>().having((e) => e.message, 'guidance',
+              contains('full region identifier'))));
+      expect(calls, 0);
+    });
+  }
+
+  test(
+      'compartments carry parents and sorted display paths that separate same names',
+      () async {
+    const prod = 'ocid1.compartment.oc1..prod';
+    const dev = 'ocid1.compartment.oc1..dev';
+    const prodNetwork = 'ocid1.compartment.oc1..prod-network';
+    const devNetwork = 'ocid1.compartment.oc1..dev-network';
+    const orphan = 'ocid1.compartment.oc1..orphan';
+    final client = OciCliClient(
+        runner: (_) async => response([
+              {'id': devNetwork, 'name': 'network', 'compartment-id': dev},
+              {'id': prodNetwork, 'name': 'network', 'compartment-id': prod},
+              {'id': prod, 'name': 'prod', 'compartment-id': tenancy},
+              {'id': dev, 'name': 'dev', 'compartment-id': tenancy},
+              {
+                'id': orphan,
+                'name': 'leaf',
+                'compartment-id': 'ocid1.compartment.oc1..hidden'
+              },
+            ]));
+    final scopes =
+        await client.compartments(connection, region: 'us-phoenix-1');
+    expect(scopes.map((scope) => scope.id),
+        [tenancy, dev, devNetwork, prod, prodNetwork, orphan]);
+    expect(scopes.map((scope) => scope.path), [
+      'root',
+      'root / dev',
+      'root / dev / network',
+      'root / prod',
+      'root / prod / network',
+      '… / leaf'
+    ]);
+    expect(scopes.map((scope) => scope.parentId),
+        [null, tenancy, dev, tenancy, prod, 'ocid1.compartment.oc1..hidden']);
+    expect(scopes.map((scope) => scope.name),
+        contains(startsWith('Tenancy root')));
+    expect(scopes.last.displayPath, '… / leaf');
+    expect(const OciCompartment(id: 'x', name: 'plain').displayPath, 'plain');
+  });
+
+  test('a cyclic parent chain stays a finite display path', () async {
+    const first = 'ocid1.compartment.oc1..first';
+    const second = 'ocid1.compartment.oc1..second';
+    final client = OciCliClient(
+        runner: (_) async => response([
+              {'id': first, 'name': 'first', 'compartment-id': second},
+              {'id': second, 'name': 'second', 'compartment-id': first},
+            ]));
+    final scopes =
+        await client.compartments(connection, region: 'us-phoenix-1');
+    expect(scopes.map((scope) => scope.path),
+        ['root', '… / first / second', '… / second / first']);
+  });
+
+  test('compartment without a usable name falls back to its id', () async {
+    final client = OciCliClient(
+        runner: (_) async => response([
+              {'id': child, 'compartment-id': tenancy},
+              {'id': nested, 'name': 42, 'compartment-id': child},
+            ]));
+    final scopes =
+        await client.compartments(connection, region: 'us-phoenix-1');
+    expect(scopes.map((scope) => scope.name),
+        [startsWith('Tenancy root'), child, nested]);
+    expect(scopes[2].path, 'root / $child / $nested');
+    final discovery = await OciCliClient(runner: (command) async {
+      if (operation(command)[1] == 'compartment') {
+        return response([
+          {'id': child, 'compartment-id': tenancy}
+        ]);
+      }
+      return response([]);
+    }).discover(connection, regions: ['us-phoenix-1'], allCompartments: true);
+    expect(jsonDecode(discovery.bundleJson)['metadata']['compartmentIds'],
+        [tenancy, child]);
   });
 }

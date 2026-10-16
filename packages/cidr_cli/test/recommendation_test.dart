@@ -139,6 +139,35 @@ void main() {
         2);
   });
 
+  test('apply without a free candidate does not print the preview hint', () {
+    final seeded = InventoryStore.open(database);
+    seeded.save(const PrefixRecord(
+      id: 'occupied',
+      cidr: '10.90.0.0/24',
+      name: 'Occupied',
+      routingDomain: 'fictional',
+    ));
+    seeded.close();
+    final result = run([
+      '--pool',
+      '10.90.0.0/24',
+      '--routing-domain',
+      'fictional',
+      '--prefix',
+      '24',
+      '--apply',
+      '--name',
+      'No room',
+    ]);
+    expect(result.code, 1);
+    expect(result.out, isNot(contains('Preview only')));
+    expect(result.out, contains('No reservation was saved.'));
+    expect(result.err, contains('No aligned /24 candidate is available'));
+    final store = InventoryStore.open(database);
+    expect(store.list().map((record) => record.id), ['occupied']);
+    store.close();
+  });
+
   test('no-fit and missing apply name do not save a reservation', () {
     final noFit = run([
       '--pool',

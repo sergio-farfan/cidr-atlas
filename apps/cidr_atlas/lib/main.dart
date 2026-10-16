@@ -6,25 +6,29 @@ import 'dart:io';
 
 import 'package:cidr_data/cidr_data.dart';
 import 'package:flutter/material.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import 'app.dart';
 import 'controller.dart';
+import 'oci_dialog.dart';
+
+/// The inventory database the application opens: the same default path as
+/// `cidrctl`, computed by the shared `cidr_data` function.
+String atlasDatabasePath(
+  Map<String, String> environment, {
+  String? operatingSystem,
+}) => defaultDatabasePath(environment, operatingSystem: operatingSystem);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
-    final base = await getApplicationSupportDirectory();
-    // Match cidrctl's default path. path_provider returns the bundle-specific
-    // directory on macOS, so use its Application Support parent there.
-    final root = Platform.isMacOS ? base.parent.path : base.path;
-    final directory = Directory(p.join(root, 'cidr_atlas'));
-    await directory.create(recursive: true);
-    final databasePath = p.join(directory.path, 'inventory.sqlite');
+    final databasePath = atlasDatabasePath(Platform.environment);
+    await File(databasePath).parent.create(recursive: true);
     final store = InventoryStore.open(databasePath);
     runApp(
-      AtlasApp(controller: AtlasController(store, databasePath: databasePath)),
+      AtlasApp(
+        controller: AtlasController(store, databasePath: databasePath),
+        ociClientFactory: OciDiscoveryDialog.defaultClientFactory,
+      ),
     );
   } catch (error) {
     runApp(

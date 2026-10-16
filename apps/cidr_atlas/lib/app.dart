@@ -4,6 +4,7 @@
 
 import 'package:cidr_core/cidr_core.dart';
 import 'package:cidr_data/cidr_data.dart';
+import 'package:cidr_oci/cidr_oci.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -11,6 +12,7 @@ import 'controller.dart';
 import 'cidr_inspector.dart';
 import 'dialogs.dart';
 import 'help.dart';
+import 'oci_dialog.dart';
 import 'visual_planner.dart';
 
 const _background = Color(0xff10151f);
@@ -20,8 +22,20 @@ const _muted = Color(0xff98a6bc);
 const _accent = Color(0xff8fafff);
 
 class AtlasApp extends StatelessWidget {
-  const AtlasApp({super.key, required this.controller});
+  const AtlasApp({
+    super.key,
+    required this.controller,
+    this.ociClient,
+    this.ociClientFactory,
+  });
   final AtlasController controller;
+
+  /// OCI adapter for discovery; defaults to the installed OCI CLI.
+  final OciInventoryClient? ociClient;
+
+  /// Creates OCI adapters, including one bounded by an entered collection
+  /// time limit. Production passes [OciDiscoveryDialog.defaultClientFactory].
+  final OciClientFactory? ociClientFactory;
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'CIDR Atlas',
@@ -83,13 +97,23 @@ class AtlasApp extends StatelessWidget {
         waitDuration: Duration(milliseconds: 400),
       ),
     ),
-    home: _Workspace(controller: controller),
+    home: _Workspace(
+      controller: controller,
+      ociClient: ociClient,
+      ociClientFactory: ociClientFactory,
+    ),
   );
 }
 
 class _Workspace extends StatefulWidget {
-  const _Workspace({required this.controller});
+  const _Workspace({
+    required this.controller,
+    this.ociClient,
+    this.ociClientFactory,
+  });
   final AtlasController controller;
+  final OciInventoryClient? ociClient;
+  final OciClientFactory? ociClientFactory;
   @override
   State<_Workspace> createState() => _WorkspaceState();
 }
@@ -106,28 +130,27 @@ class _WorkspaceState extends State<_Workspace> {
     super.dispose();
   }
 
-  Future<void> _editor([PrefixRecord? record]) async {
-    final result = await showDialog<PrefixRecord>(
-      context: context,
-      builder: (_) => RecordEditor(records: c.records, record: record),
-    );
-    if (result == null || !mounted) return;
+  Future<void> _editor([PrefixRecord? record]) => showDialog<PrefixRecord>(
+    context: context,
+    builder: (_) =>
+        RecordEditor(records: c.records, record: record, onSave: _saveEdited),
+  );
+
+  /// Saves an edited record while its editor stays open, so a conflict
+  /// cancellation or store failure keeps the user's input.
+  Future<bool> _saveEdited(PrefixRecord result) async {
     final combined = [
       ...c.store.list().where((r) => r.id != result.id),
       result,
     ];
-    final conflicts = InventoryRules.conflicts(combined)
-        .where(
-          (conflict) =>
-              conflict.first.id == result.id || conflict.second.id == result.id,
-        )
-        .toList();
+    final conflicts = InventoryRules.conflictsFor({result.id}, combined);
     var confirmedConflicts = false;
     if (conflicts.isNotEmpty) {
+      if (!mounted) return false;
       confirmedConflicts =
           await showDialog<bool>(
             context: context,
-            builder: (_) => AlertDialog(
+            builder: (dialogContext) => AlertDialog(
               title: const Text('This prefix has routing conflicts'),
               content: SizedBox(
                 width: 540,
@@ -155,29 +178,40 @@ class _WorkspaceState extends State<_Workspace> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.pop(context, false),
+                  onPressed: () => Navigator.pop(dialogContext, false),
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
+                  onPressed: () => Navigator.pop(dialogContext, true),
                   child: const Text('Save with conflicts'),
                 ),
               ],
             ),
           ) ??
           false;
-      if (!confirmedConflicts) return;
+      if (!confirmedConflicts) return false;
     }
-    if (!mounted) return;
-    _guard(() => c.save(result, rejectConflicts: !confirmedConflicts));
+    if (!mounted) return false;
+    c.save(result, rejectConflicts: !confirmedConflicts);
+    return true;
   }
 
-  Future<void> _reserveRecommendation(PrefixRecord proposal) async {
-    final reviewed = await showDialog<PrefixRecord>(
-      context: context,
-      builder: (_) => RecordEditor(records: c.records, record: proposal),
-    );
-    if (reviewed == null || !mounted) return;
+  Future<void> _reserveRecommendation(PrefixRecord proposal) =>
+      showDialog<PrefixRecord>(
+        context: context,
+        builder: (_) => RecordEditor(
+          records: c.records,
+          record: proposal,
+          onSave: (reviewed) async {
+            _reserveReviewed(proposal, reviewed);
+            return true;
+          },
+        ),
+      );
+
+  /// Strictly reserves a reviewed planner proposal. Failures propagate to the
+  /// still-open editor; this path never offers the manual conflict override.
+  void _reserveReviewed(PrefixRecord proposal, PrefixRecord reviewed) {
     if (reviewed.id != proposal.id ||
         reviewed.cidr != proposal.cidr ||
         reviewed.routingDomain != proposal.routingDomain ||
@@ -188,13 +222,10 @@ class _WorkspaceState extends State<_Workspace> {
         reviewed.resourceId != proposal.resourceId ||
         reviewed.vcnId != proposal.vcnId ||
         reviewed.status == PrefixStatus.retired) {
-      _showError(
-        const FormatException(
-          'Recalculate the recommendation after changing its network, scope, '
-          'parent, kind, or allocation state.',
-        ),
+      throw const FormatException(
+        'Recalculate the recommendation after changing its network, scope, '
+        'parent, kind, or allocation state.',
       );
-      return;
     }
     final notes = reviewed.notes.contains(proposal.notes)
         ? reviewed.notes
@@ -202,7 +233,7 @@ class _WorkspaceState extends State<_Workspace> {
             reviewed.notes.trim(),
             proposal.notes,
           ].where((part) => part.isNotEmpty).join('\n\n');
-    _guard(() => c.reserve(reviewed.copyWith(notes: notes, source: 'planner')));
+    c.reserve(reviewed.copyWith(notes: notes, source: 'planner'));
   }
 
   void _guard(void Function() operation) {
@@ -237,6 +268,8 @@ class _WorkspaceState extends State<_Workspace> {
         existing: c.records,
         domain: c.domain,
         proposedRecords: c.store.mergedImportRecords,
+        ociClient: widget.ociClient,
+        ociClientFactory: widget.ociClientFactory,
       ),
     );
     if (result != null && mounted) {
@@ -246,6 +279,9 @@ class _WorkspaceState extends State<_Workspace> {
 
   Future<void> _export(bool csv) async {
     try {
+      // The database is shared with cidrctl: back up what it holds now, not
+      // the records loaded at the last refresh.
+      c.refresh();
       await exportInventory(context, List.of(c.records), csv: csv);
     } catch (error) {
       _showError(error);
@@ -273,6 +309,33 @@ class _WorkspaceState extends State<_Workspace> {
       ),
     );
     if (confirmed == true && mounted) _guard(() => c.remove(record.id));
+  }
+
+  Future<void> _removeDemo() async {
+    final count = c.records.where(AtlasController.isDemo).length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Remove sample data?'),
+        content: Text(
+          'Delete the $count fictional sample record${count == 1 ? '' : 's'} '
+          'from this local register in one change. Other records are kept. '
+          'Records you added under a sample network must be removed or '
+          're-parented first.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Remove sample data'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) _guard(c.removeDemo);
   }
 
   @override
@@ -304,6 +367,7 @@ class _WorkspaceState extends State<_Workspace> {
                         1 => _conflicts(),
                         2 => VisualPlanner(
                           records: c.records,
+                          conflicts: c.conflicts,
                           onReserve: _reserveRecommendation,
                         ),
                         3 => _history(),
@@ -921,6 +985,16 @@ class _WorkspaceState extends State<_Workspace> {
                   style: TextStyle(color: _muted, fontSize: 11),
                 ),
                 const Spacer(),
+                if (c.hasDemoRecords)
+                  TextButton.icon(
+                    key: const ValueKey('remove-sample-data'),
+                    onPressed: _removeDemo,
+                    icon: const Icon(Icons.delete_sweep_outlined, size: 16),
+                    label: const Text(
+                      'Remove sample data',
+                      style: TextStyle(fontSize: 11),
+                    ),
+                  ),
                 Tooltip(
                   message: _tree ? 'Flat list' : 'Hierarchy view',
                   child: IconButton(
@@ -1162,9 +1236,16 @@ class _WorkspaceState extends State<_Workspace> {
 
   List<Widget> _hierarchy(List<PrefixRecord> records) {
     final visible = records.map((r) => r.id).toSet();
-    Widget branch(PrefixRecord record) {
-      final children = records.where((r) => r.parentId == record.id).toList();
-      if (children.isEmpty)
+    final childrenOf = <String, List<PrefixRecord>>{};
+    for (final r in records) {
+      if (r.parentId.isNotEmpty) (childrenOf[r.parentId] ??= []).add(r);
+    }
+    Widget branch(PrefixRecord record, Set<String> ancestors) {
+      final children = [
+        for (final child in childrenOf[record.id] ?? const <PrefixRecord>[])
+          if (!ancestors.contains(child.id)) child,
+      ];
+      if (children.isEmpty) {
         return ListTile(
           dense: true,
           leading: Icon(
@@ -1185,6 +1266,7 @@ class _WorkspaceState extends State<_Workspace> {
           trailing: _statusBadge(record.status),
           onTap: () => _inspect(record),
         );
+      }
       return ExpansionTile(
         initiallyExpanded: true,
         leading: const Icon(Icons.folder_outlined, size: 18, color: _accent),
@@ -1202,13 +1284,16 @@ class _WorkspaceState extends State<_Workspace> {
           icon: const Icon(Icons.info_outline, size: 18, color: _accent),
         ),
         childrenPadding: const EdgeInsets.only(left: 20),
-        children: [for (final child in children) branch(child)],
+        children: [
+          for (final child in children)
+            branch(child, {...ancestors, record.id}),
+        ],
       );
     }
 
     return records
         .where((r) => r.parentId.isEmpty || !visible.contains(r.parentId))
-        .map(branch)
+        .map((r) => branch(r, {r.id}))
         .toList();
   }
 
@@ -1286,10 +1371,14 @@ class _WorkspaceState extends State<_Workspace> {
                 const SizedBox(height: 26),
                 CidrInspector(
                   cidr: Cidr.parse(record.cidr),
-                  policy:
-                      record.source == 'oci' && record.kind == PrefixKind.subnet
-                      ? AddressPolicy.ociIpv4Subnet
-                      : AddressPolicy.generic,
+                  policy: inspectionPolicy(
+                    record,
+                    parent: record.parentId.isEmpty
+                        ? null
+                        : c.records
+                              .where((r) => r.id == record.parentId)
+                              .firstOrNull,
+                  ),
                 ),
                 const SizedBox(height: 26),
                 for (final field in [
@@ -1476,9 +1565,30 @@ class _WorkspaceState extends State<_Workspace> {
         )
       : ListView.separated(
           padding: const EdgeInsets.all(26),
-          itemCount: c.history.length,
+          itemCount: c.history.length + (c.hasMoreHistory ? 1 : 0),
           separatorBuilder: (context, index) => const Divider(height: 1),
           itemBuilder: (_, index) {
+            if (index == c.history.length) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Showing the latest ${c.history.length} changes. '
+                        'Older changes remain in the local database.',
+                        style: const TextStyle(color: _muted, fontSize: 12),
+                      ),
+                    ),
+                    OutlinedButton(
+                      key: const ValueKey('history-load-more'),
+                      onPressed: () => _guard(c.loadMoreHistory),
+                      child: const Text('Load more'),
+                    ),
+                  ],
+                ),
+              );
+            }
             final entry = c.history[index];
             return ListTile(
               contentPadding: const EdgeInsets.symmetric(

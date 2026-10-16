@@ -1,3 +1,7 @@
+# CIDR Atlas
+# Shared static analysis settings for the repository.
+# Author: Sergio Farfan <sergio.farfan@gmail.com>
+
 analyzer:
   exclude:
     - '**/build/**'

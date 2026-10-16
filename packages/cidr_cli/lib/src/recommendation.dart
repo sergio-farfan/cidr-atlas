@@ -8,6 +8,8 @@ import 'package:args/args.dart';
 import 'package:cidr_core/cidr_core.dart';
 import 'package:cidr_data/cidr_data.dart';
 
+import 'routing_domains.dart';
+
 void addRecommendationOptions(ArgParser parser) {
   parser
     ..addOption('pool', help: 'Required canonical CIDR planning boundary.')
@@ -104,6 +106,7 @@ int runRecommendation(InventoryStore store, ArgResults command,
     demand = null;
   }
   final records = store.list();
+  warnUnknownRoutingDomain(records, domain, errors);
   PrefixRecord? parent;
   for (final record in records) {
     if (record.id == parentId) parent = record;
@@ -136,7 +139,8 @@ int runRecommendation(InventoryStore store, ArgResults command,
     PrefixRecord? reserved;
     if (apply) {
       if (plan.candidates.isEmpty) {
-        _writeRecommendation(plan, command, domain, kind, output);
+        _writeRecommendation(plan, command, domain, kind, output,
+            applyFailed: true);
         errors
             .writeln('No aligned /${plan.prefixLength} candidate is available '
                 'in this inventory. No reservation was saved.');
@@ -226,7 +230,7 @@ String _recommendationId(List<PrefixRecord> records) {
 
 void _writeRecommendation(AllocationPlan plan, ArgResults command,
     String domain, PrefixKind kind, StringSink output,
-    {PrefixRecord? reserved}) {
+    {PrefixRecord? reserved, bool applyFailed = false}) {
   if (command['format'] == 'json') {
     output.writeln(const JsonEncoder.withIndent('  ').convert({
       ...plan.toJson(),
@@ -261,6 +265,8 @@ void _writeRecommendation(AllocationPlan plan, ArgResults command,
   if (reserved != null) {
     output.writeln('Reserved ${reserved.cidr} as ${reserved.name} '
         '[${reserved.id}] in ${reserved.routingDomain}.');
+  } else if (applyFailed) {
+    output.writeln('No reservation was saved.');
   } else {
     output.writeln('Preview only. Use --apply --name NAME to reserve the first '
         'ranked candidate locally.');

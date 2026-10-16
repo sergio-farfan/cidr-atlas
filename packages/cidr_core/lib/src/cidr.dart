@@ -17,6 +17,12 @@ final class Cidr {
         input,
       );
     }
+    if (parts[1].length > 1 && parts[1].startsWith('0')) {
+      throw FormatException(
+        'Invalid prefix length "/${parts[1]}". Use decimal without leading zeros.',
+        input,
+      );
+    }
     final version = parts[0].contains(':') ? 6 : 4;
     final bits = version == 4 ? 32 : 128;
     final prefix = int.tryParse(parts[1]);

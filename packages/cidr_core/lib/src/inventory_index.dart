@@ -95,11 +95,22 @@ final class InventoryIndex {
         // [InventoryRules.validate] returns the actual parse error.
       }
     }
+    // Built after the loop because duplicate ids are removed from [byId]
+    // while it is being populated.
+    for (final record in byId.values) {
+      if (record.kind == PrefixKind.vcn && record.resourceId.isNotEmpty) {
+        (vcnsByResourceId[record.resourceId] ??= []).add(record);
+      }
+    }
   }
 
   final byId = <String, PrefixRecord>{};
   final duplicates = <String>{};
   final networks = <PrefixRecord, Cidr>{};
+
+  /// Uniquely identified VCN records by OCI resource id. A VCN with several
+  /// CIDR blocks has several records sharing one resource id.
+  final vcnsByResourceId = <String, List<PrefixRecord>>{};
   final _ancestorCache = <String, Set<String>?>{};
 
   /// Explicit parent links take precedence. Otherwise a subnet may inherit
@@ -116,7 +127,8 @@ final class InventoryIndex {
     }
     final subnetNetwork = networks[record];
     if (subnetNetwork == null) return null;
-    for (final vcn in byId.values) {
+    for (final vcn
+        in vcnsByResourceId[record.vcnId] ?? const <PrefixRecord>[]) {
       final vcnNetwork = networks[vcn];
       if (vcnNetwork == null ||
           !validOciRelationship(vcn, record, vcnNetwork, subnetNetwork)) {
@@ -190,4 +202,69 @@ final class InventoryIndex {
     }
     return null;
   }
+
+  /// The VCN records that contradict [child]'s explicit placeholder [parent]:
+  /// [parent] is a VCN without a resource id, [child] records a `vcnId`, and
+  /// the inventory holds a comparable VCN with that resource id. A VCN record
+  /// is comparable when it is not retired, shares the subnet's routing domain,
+  /// and matches tenancy and region wherever both records set them.
+  ///
+  /// The link stays structurally valid, as it was before the VCN was known;
+  /// [InventoryRules.advisories] reports it for review.
+  List<PrefixRecord> contradictingVcns(
+    PrefixRecord child,
+    PrefixRecord parent,
+  ) {
+    if (parent.kind != PrefixKind.vcn ||
+        parent.resourceId.isNotEmpty ||
+        child.vcnId.isEmpty) {
+      return const [];
+    }
+    final named = vcnsByResourceId[child.vcnId] ?? const <PrefixRecord>[];
+    return [
+      for (final vcn in named)
+        if (vcn.id != parent.id && _comparableVcn(vcn, child)) vcn,
+    ];
+  }
+
+  static bool _comparableVcn(PrefixRecord vcn, PrefixRecord subnet) =>
+      vcn.status != PrefixStatus.retired &&
+      sameRoutingDomain(vcn.routingDomain, subnet.routingDomain) &&
+      (vcn.tenancy.isEmpty ||
+          subnet.tenancy.isEmpty ||
+          vcn.tenancy == subnet.tenancy) &&
+      (vcn.region.isEmpty ||
+          subnet.region.isEmpty ||
+          vcn.region == subnet.region);
+}
+
+/// Non-blocking review notices for [records]; see
+/// [InventoryRules.advisories].
+List<String> inventoryAdvisories(
+  List<PrefixRecord> records, {
+  Set<String>? involving,
+}) {
+  final index = InventoryIndex(records);
+  final advisories = <String>[];
+  for (final child in index.byId.values) {
+    if (child.parentId.isEmpty) continue;
+    final parent = index.byId[child.parentId];
+    if (parent == null) continue;
+    final contradicting = index.contradictingVcns(child, parent);
+    if (contradicting.isEmpty) continue;
+    if (involving != null &&
+        !involving.contains(child.id) &&
+        !involving.contains(parent.id) &&
+        !contradicting.any((vcn) => involving.contains(vcn.id))) {
+      continue;
+    }
+    final vcn = contradicting.first;
+    advisories.add(
+      'Subnet ${child.name} (${child.cidr}) has vcnId ${child.vcnId}, which '
+      'names VCN ${vcn.name} (${vcn.cidr}, ${vcn.resourceId}), but its parent '
+      'is the placeholder VCN ${parent.name} (${parent.cidr}) without a '
+      'resource id. Clear or change the parent of ${child.name}.',
+    );
+  }
+  return advisories;
 }

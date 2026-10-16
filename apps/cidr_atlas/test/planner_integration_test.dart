@@ -80,7 +80,9 @@ void main() {
     final history = store.history().length;
     await tester.tap(find.text('Save prefix'));
     await tester.pumpAndSettle();
-    expect(find.text('Could not complete the change'), findsOneWidget);
+    // The strict failure is shown inside the still-open editor.
+    expect(find.textContaining('Allocation conflicts'), findsOneWidget);
+    expect(find.text('Save prefix'), findsOneWidget);
     expect(find.text('Save with conflicts'), findsNothing);
     expect(store.list().any((record) => record.id == proposal.id), isFalse);
     expect(store.history().length, history);
@@ -99,6 +101,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('Recalculate'), findsWidgets);
     expect(store.list().any((record) => record.id == proposal.id), isFalse);
+    // The edited value is kept for review instead of being discarded.
+    expect(find.text('10.64.9.0/24'), findsOneWidget);
   });
 
   testWidgets('review cannot attach an unobserved OCI resource identity', (
@@ -116,5 +120,115 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('Recalculate'), findsWidgets);
     expect(store.list().any((record) => record.id == proposal.id), isFalse);
+  });
+
+  group('planner reservation end to end', () {
+    Future<void> planInDemoVcn(WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1440, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      controller.navigate(2);
+      await tester.pumpWidget(AtlasApp(controller: controller));
+      await tester.pumpAndSettle();
+      Future<void> select(String key, String text) async {
+        await tester.ensureVisible(find.byKey(ValueKey(key)));
+        await tester.tap(find.byKey(ValueKey(key)));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(text).last);
+        await tester.pumpAndSettle();
+      }
+
+      await select('planner-domain', 'demo-corporate');
+      await select('planner-pool', 'Production VCN (10.64.0.0/20)');
+      await select('planner-policy', 'OCI IPv4 subnet');
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('planner-calculate')),
+      );
+      await tester.tap(find.byKey(const ValueKey('planner-calculate')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('reserve-candidate')),
+      );
+    }
+
+    testWidgets('a planner candidate is reserved strictly through the editor', (
+      tester,
+    ) async {
+      await planInDemoVcn(tester);
+      final rationale = tester
+          .widgetList<SelectableText>(find.byType(SelectableText))
+          .map((text) => text.data ?? '')
+          .firstWhere((text) => text.contains('Policy: ociIpv4Subnet'));
+      await tester.tap(find.byKey(const ValueKey('reserve-candidate')));
+      await tester.pumpAndSettle();
+      expect(find.text('New prefix'), findsWidgets);
+      await tester.ensureVisible(find.text('Save prefix'));
+      await tester.tap(find.text('Save prefix'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Recalculate'), findsNothing);
+      expect(store.list().length, 7);
+      final saved = store.list().singleWhere(
+        (record) => record.id.startsWith('reservation-'),
+      );
+      expect(saved.source, 'planner');
+      expect(saved.kind, PrefixKind.subnet);
+      expect(saved.status, PrefixStatus.reserved);
+      expect(saved.parentId, 'demo-vcn');
+      expect(saved.vcnId, 'demo-vcn-resource');
+      expect(saved.tenancy, 'demo-tenancy');
+      expect(saved.notes, contains(rationale));
+      expect(InventoryRules.conflicts(store.list()), isEmpty);
+      expect(store.history().first.action, 'reserve');
+
+      // The saved OCI subnet keeps the capacity its rationale cites.
+      controller.navigate(0);
+      await tester.pumpAndSettle();
+      controller.select(saved.id);
+      await tester.pumpAndSettle();
+      expect(find.text('PREFIX DETAILS'), findsOneWidget);
+      expect(find.text('253 assignable addresses'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a concurrent conflicting save fails without an override', (
+      tester,
+    ) async {
+      await planInDemoVcn(tester);
+      final cidr = tester
+          .widget<Text>(
+            find.descendant(
+              of: find.byKey(const ValueKey('candidate-0')),
+              matching: find.byType(Text),
+            ),
+          )
+          .data!;
+      await tester.tap(find.byKey(const ValueKey('reserve-candidate')));
+      await tester.pumpAndSettle();
+      // Another process (cidrctl) takes the same range meanwhile.
+      store.save(
+        PrefixRecord(
+          id: 'other-process',
+          cidr: cidr,
+          name: 'Concurrent reservation',
+          routingDomain: 'demo-corporate',
+          kind: PrefixKind.subnet,
+          parentId: 'demo-vcn',
+          tenancy: 'demo-tenancy',
+          region: 'us-phoenix-1',
+          vcnId: 'demo-vcn-resource',
+        ),
+      );
+      await tester.ensureVisible(find.text('Save prefix'));
+      await tester.tap(find.text('Save prefix'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Allocation conflicts'), findsOneWidget);
+      expect(find.text('Save with conflicts'), findsNothing);
+      expect(
+        store.list().where((record) => record.id.startsWith('reservation-')),
+        isEmpty,
+      );
+      expect(tester.takeException(), isNull);
+    });
   });
 }

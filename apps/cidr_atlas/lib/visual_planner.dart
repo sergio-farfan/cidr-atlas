@@ -2,7 +2,6 @@
 // Address-space hierarchy, bounded recommendations, and local reservation intent.
 // Author: Sergio Farfan <sergio.farfan@gmail.com>
 
-import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:cidr_core/cidr_core.dart';
@@ -25,9 +24,17 @@ class VisualPlanner extends StatefulWidget {
     super.key,
     required this.records,
     required this.onReserve,
+    this.conflicts,
   });
+
+  /// The full inventory. A new list instance marks an inventory change: it
+  /// clears stale recommendations and rebuilds the cached hierarchy.
   final List<PrefixRecord> records;
   final void Function(PrefixRecord) onReserve;
+
+  /// Conflicts already computed for [records], such as the controller's.
+  /// When omitted they are computed once per inventory change.
+  final List<Conflict>? conflicts;
 
   @override
   State<VisualPlanner> createState() => _VisualPlannerState();
@@ -54,10 +61,14 @@ class _VisualPlannerState extends State<VisualPlanner> {
   int _rangePage = 0;
   String? _error;
   PrefixRecord? _inspected;
-  late String _inventorySignature;
+  _InventoryModel? _inventoryModel;
 
-  String _signature() =>
-      jsonEncode(widget.records.map((r) => r.toJson()).toList());
+  /// Width of the address map viewport, recorded during layout.
+  double _mapWidth = 0;
+  static const _mapHeight = 110.0;
+
+  _InventoryModel get _model =>
+      _inventoryModel ??= _InventoryModel(widget.records, widget.conflicts);
   String get _routingDomain =>
       _domain == '__manual__' ? _manualDomain.text.trim() : (_domain ?? '');
   PrefixRecord? get _pool => widget.records
@@ -77,7 +88,6 @@ class _VisualPlannerState extends State<VisualPlanner> {
   @override
   void initState() {
     super.initState();
-    _inventorySignature = _signature();
     for (final controller in [
       _manualPool,
       _manualDomain,
@@ -93,9 +103,13 @@ class _VisualPlannerState extends State<VisualPlanner> {
   @override
   void didUpdateWidget(covariant VisualPlanner oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final signature = _signature();
-    if (signature != _inventorySignature) {
-      _inventorySignature = signature;
+    if (!identical(oldWidget.conflicts, widget.conflicts)) {
+      _inventoryModel = null;
+    }
+    // The controller replaces its list on every refresh, so identity is a
+    // cheap and conservative inventory revision check.
+    if (!identical(oldWidget.records, widget.records)) {
+      _inventoryModel = null;
       _clear();
       _inspected = null;
       if (_poolId.isNotEmpty && _pool == null) _poolId = '';
@@ -156,39 +170,61 @@ class _VisualPlannerState extends State<VisualPlanner> {
 
   void _calculate() {
     try {
-      if (_routingDomain.isEmpty)
+      if (_routingDomain.isEmpty) {
         throw const FormatException(
           'Choose a routing domain, or enter an explicit domain manually.',
         );
+      }
       final pool = _pool;
-      if (_poolId.isNotEmpty && pool == null)
+      if (_poolId.isNotEmpty && pool == null) {
         throw const FormatException('Select an existing, non-retired pool.');
+      }
       final parent = Cidr.parse(pool?.cidr ?? _manualPool.text);
-      if (pool?.kind == PrefixKind.vcn && _kind != PrefixKind.subnet)
+      if (pool?.kind == PrefixKind.vcn && _kind != PrefixKind.subnet) {
         throw const FormatException('A VCN pool requires subnet intent.');
-      if (pool?.kind == PrefixKind.allocation && _kind != PrefixKind.vcn)
+      }
+      if (pool?.kind == PrefixKind.allocation && _kind != PrefixKind.vcn) {
         throw const FormatException('An allocation pool requires VCN intent.');
+      }
       if (_policy == AddressPolicy.ociIpv4Subnet &&
-          (_kind != PrefixKind.subnet || parent.version != 4))
+          (_kind != PrefixKind.subnet || parent.version != 4)) {
         throw const FormatException(
           'OCI IPv4 subnet policy requires IPv4 and subnet intent.',
         );
+      }
       AddressDemand? demand;
       int? prefix;
       if (_demandMode) {
         if (_kind != PrefixKind.subnet ||
             _policy != AddressPolicy.ociIpv4Subnet ||
-            parent.version != 4)
+            parent.version != 4) {
           throw const FormatException(
             'Address demand requires OCI IPv4 subnet policy and subnet intent. Plan VCNs from their child subnet requirements.',
           );
+        }
         final base = BigInt.tryParse(_addresses.text.trim());
         final growth = int.tryParse(_growth.text.trim());
         final additional = BigInt.tryParse(_additional.text.trim());
-        if (base == null || growth == null || additional == null)
+        if (base == null || growth == null || additional == null) {
           throw const FormatException(
             'Enter whole address counts and choose an explicit growth percentage, including 0 if deliberate.',
           );
+        }
+        if (base <= BigInt.zero) {
+          throw const FormatException(
+            'Endpoint IP demand must be at least 1 address.',
+          );
+        }
+        if (growth < 0) {
+          throw const FormatException(
+            'The growth allowance cannot be negative; enter 0 for no growth.',
+          );
+        }
+        if (additional < BigInt.zero) {
+          throw const FormatException(
+            'Additional service / HA / DR IPs cannot be negative; enter 0 if none.',
+          );
+        }
         demand = AddressDemand(
           addresses: base,
           growthPercent: growth,
@@ -197,13 +233,22 @@ class _VisualPlannerState extends State<VisualPlanner> {
         );
       } else {
         prefix = int.tryParse(_prefix.text.trim());
-        if (prefix == null)
+        if (prefix == null) {
           throw const FormatException('Enter a whole prefix length.');
+        }
+        if (prefix < parent.prefixLength || prefix > parent.bitLength) {
+          throw FormatException(
+            'Requested /$prefix does not fit the /${parent.prefixLength} pool '
+            '${parent.canonical}; choose /${parent.prefixLength} to '
+            '/${parent.bitLength}.',
+          );
+        }
         if (_policy == AddressPolicy.ociIpv4Subnet &&
-            (prefix < 16 || prefix > 30))
+            (prefix < 16 || prefix > 30)) {
           throw const FormatException(
             'OCI IPv4 subnets require /16 through /30. Use generic policy for raw /31 or /32 calculations.',
           );
+        }
       }
       final result = AddressPlanner.plan(
         parent: parent,
@@ -241,12 +286,16 @@ class _VisualPlannerState extends State<VisualPlanner> {
     }
   }
 
-  String _errorText(Object error) => error is FormatException
-      ? error.message.toString()
-      : error.toString().replaceFirst(
-          RegExp(r'^(Invalid argument\(s\)?: |Bad state: )'),
-          '',
-        );
+  /// Readable text for planner failures; never a raw Dart exception string.
+  String _errorText(Object error) => switch (error) {
+    FormatException(:final message) => message,
+    RangeError() =>
+      'A planning value is outside the range this pool allows. Check the '
+          'prefix length and address counts.',
+    ArgumentError(:final Object? message) when message != null => '$message',
+    StateError(:final message) => message,
+    _ => 'The plan could not be calculated. Check the planning inputs.',
+  };
 
   void _reserve() {
     final candidate = _candidate;
@@ -340,8 +389,9 @@ class _VisualPlannerState extends State<VisualPlanner> {
           ..sort();
     if (_domain != null &&
         _domain != '__manual__' &&
-        !domains.contains(_domain))
+        !domains.contains(_domain)) {
       domains.add(_domain!);
+    }
     final pools = widget.records
         .where(
           (r) =>
@@ -799,25 +849,73 @@ class _VisualPlannerState extends State<VisualPlanner> {
 
   Widget _stat(String label, BigInt count) => SizedBox(
     width: 120,
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(fontSize: 12, color: _muted)),
-        const SizedBox(height: 4),
-        SelectableText(
-          formatAddressCount(count),
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-        ),
-      ],
+    child: MergeSemantics(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 12, color: _muted)),
+          const SizedBox(height: 4),
+          SelectableText(
+            formatAddressCount(count),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
     ),
   );
 
+  /// Horizontal view of the one-dimensional map: scale [scale] and
+  /// translation clamped so the map always covers the viewport.
+  void _setMapView(double scale, double translation) {
+    final width = _mapWidth;
+    final clamped = translation.clamp(width - scale * width, 0.0);
+    _transform.value = scale <= 1
+        ? Matrix4.identity()
+        : (Matrix4.identity()
+            ..translateByDouble(clamped, 0, 0, 1)
+            ..scaleByDouble(scale, 1, 1, 1));
+  }
+
+  /// Zooms the address axis around the selected candidate when it is in
+  /// view, otherwise around the viewport centre.
   void _zoom(double factor) {
-    final value = _transform.value.clone();
-    final current = value.getMaxScaleOnAxis();
+    final width = _mapWidth;
+    final value = _transform.value;
+    final current = value.entry(0, 0);
+    final translation = value.entry(0, 3);
+    if (width <= 0 || current <= 0) return;
     final next = (current * factor).clamp(1.0, 12.0);
-    value.scaleByDouble(next / current, next / current, 1, 1);
-    _transform.value = value;
+    var anchor = width / 2;
+    final result = _result;
+    final candidate = _candidate;
+    if (result != null && candidate != null) {
+      final centre =
+          current *
+              _AddressMapPainter.candidateRect(
+                result.summary,
+                candidate.cidr,
+                Size(width, _mapHeight),
+              ).center.dx +
+          translation;
+      if (centre >= 0 && centre <= width) anchor = centre;
+    }
+    final scene = (anchor - translation) / current;
+    _setMapView(next, anchor - next * scene);
+  }
+
+  /// Magnifies the map so the selected candidate is centred and readable.
+  void _zoomToCandidate() {
+    final result = _result;
+    final candidate = _candidate;
+    final width = _mapWidth;
+    if (result == null || candidate == null || width <= 0) return;
+    final rect = _AddressMapPainter.candidateRect(
+      result.summary,
+      candidate.cidr,
+      Size(width, _mapHeight),
+    );
+    final scale = (width / (rect.width * 4)).clamp(1.0, 12.0);
+    _setMapView(scale, width / 2 - scale * rect.center.dx);
   }
 
   Widget _addressMap(AllocationPlan result) {
@@ -850,8 +948,9 @@ class _VisualPlannerState extends State<VisualPlanner> {
                 icon: const Icon(Icons.add, size: 18),
               ),
               TextButton(
-                onPressed: () => _transform.value = Matrix4.identity(),
-                child: const Text('Fit'),
+                key: const ValueKey('map-zoom-candidate'),
+                onPressed: _candidate == null ? null : _zoomToCandidate,
+                child: const Text('Zoom to candidate'),
               ),
               IconButton(
                 tooltip: 'Reset view',
@@ -871,29 +970,33 @@ class _VisualPlannerState extends State<VisualPlanner> {
           ),
           const SizedBox(height: 10),
           SizedBox(
-            height: 110,
+            height: _mapHeight,
             child: LayoutBuilder(
-              builder: (context, constraints) => InteractiveViewer(
-                transformationController: _transform,
-                alignment: Alignment.topLeft,
-                minScale: 1,
-                maxScale: 12,
-                boundaryMargin: const EdgeInsets.all(30),
-                child: Semantics(
-                  label: 'Address space in ascending address order. Free ranges are solid; blocked ranges are hatched. Candidate has an outlined marker.',
-                  child: CustomPaint(
-                    size: Size(constraints.maxWidth, 110),
-                    painter: _AddressMapPainter(
-                      summary: s,
-                      candidate: _candidate?.cidr,
+              builder: (context, constraints) {
+                _mapWidth = constraints.maxWidth;
+                return InteractiveViewer(
+                  transformationController: _transform,
+                  alignment: Alignment.topLeft,
+                  minScale: 1,
+                  maxScale: 12,
+                  boundaryMargin: const EdgeInsets.all(30),
+                  child: Semantics(
+                    label: 'Address space in ascending address order. Free ranges are solid; blocked ranges are hatched. Candidate has an outlined marker.',
+                    child: CustomPaint(
+                      key: const ValueKey('address-map'),
+                      size: Size(constraints.maxWidth, _mapHeight),
+                      painter: _AddressMapPainter(
+                        summary: s,
+                        candidate: _candidate?.cidr,
+                      ),
                     ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
           ),
           const Text(
-            'Drag to pan; pinch or use zoom controls. Small spans use a minimum visible marker.',
+            'Drag to pan; zoom controls magnify the address axis around the selected candidate. Small spans use a minimum visible marker; free space is drawn above blocked space.',
             style: TextStyle(color: _muted, fontSize: 11),
           ),
           const SizedBox(height: 12),
@@ -978,22 +1081,29 @@ class _VisualPlannerState extends State<VisualPlanner> {
             runSpacing: 8,
             children: [
               for (var index = 0; index < result.candidates.length; index++)
-                OutlinedButton(
-                  key: ValueKey('candidate-$index'),
-                  focusNode: _candidateFocus[index],
-                  style: OutlinedButton.styleFrom(
-                    backgroundColor: index == _selected
-                        ? const Color(0xff263958)
-                        : null,
-                    side: BorderSide(
-                      color: index == _selected ? _accent : _border,
+                MergeSemantics(
+                  child: Semantics(
+                    selected: index == _selected,
+                    label:
+                        'Candidate ${index + 1} of ${result.candidates.length}',
+                    child: OutlinedButton(
+                      key: ValueKey('candidate-$index'),
+                      focusNode: _candidateFocus[index],
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: index == _selected
+                            ? const Color(0xff263958)
+                            : null,
+                        side: BorderSide(
+                          color: index == _selected ? _accent : _border,
+                        ),
+                      ),
+                      onPressed: () => setState(() {
+                        _selected = index;
+                        _inspected = null;
+                      }),
+                      child: Text(result.candidates[index].cidr.canonical),
                     ),
                   ),
-                  onPressed: () => setState(() {
-                    _selected = index;
-                    _inspected = null;
-                  }),
-                  child: Text(result.candidates[index].cidr.canonical),
                 ),
             ],
           ),
@@ -1085,8 +1195,9 @@ class _VisualPlannerState extends State<VisualPlanner> {
   Widget _details() {
     final record = _inspected;
     final cidr = record != null ? Cidr.parse(record.cidr) : _candidate?.cidr;
-    if (cidr == null)
+    if (cidr == null) {
       return const Text('Select a prefix or candidate to inspect.');
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -1130,9 +1241,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
           cidr: cidr,
           policy: record == null
               ? _policy
-              : record.source == 'oci' && record.kind == PrefixKind.subnet
-              ? AddressPolicy.ociIpv4Subnet
-              : AddressPolicy.generic,
+              : inspectionPolicy(record, parent: _model.byId[record.parentId]),
         ),
       ],
     );
@@ -1144,81 +1253,21 @@ class _VisualPlannerState extends State<VisualPlanner> {
     PrefixKind.subnet => 'Subnet',
   };
 
-  String _groupKey(PrefixRecord r) =>
-      r.kind == PrefixKind.vcn && r.resourceId.isNotEmpty
-      ? 'vcn:${r.routingDomain}:${r.tenancy}:${r.region}:${r.resourceId}'
-      : 'prefix:${r.id}';
-
-  bool _validParent(PrefixRecord parent, PrefixRecord child) =>
-      InventoryRules.validate([
-        parent.copyWith(parentId: ''),
-        child.copyWith(parentId: parent.id),
-      ]).isEmpty;
-
-  PrefixRecord? _parentOf(PrefixRecord record, List<PrefixRecord> records) {
-    if (record.parentId.isNotEmpty) {
-      final parent = records.where((r) => r.id == record.parentId).firstOrNull;
-      return parent != null && _validParent(parent, record) ? parent : null;
-    }
-    if (record.kind != PrefixKind.subnet || record.vcnId.isEmpty) return null;
-    return records
-        .where(
-          (r) =>
-              r.kind == PrefixKind.vcn &&
-              r.resourceId == record.vcnId &&
-              r.tenancy == record.tenancy &&
-              r.region == record.region &&
-              _validParent(r, record),
-        )
-        .firstOrNull;
-  }
-
   Widget _hierarchy() {
-    final records = widget.records
-        .where(
-          (r) => _routingDomain.isEmpty || r.routingDomain == _routingDomain,
-        )
-        .toList();
-    final groups = <String, List<PrefixRecord>>{};
-    for (final r in records) {
-      groups.putIfAbsent(_groupKey(r), () => []).add(r);
-    }
-    for (final group in groups.values) {
-      group.sort((a, b) => a.cidr.compareTo(b.cidr));
-    }
-    final parents = <String, String?>{};
-    for (final entry in groups.entries) {
-      final possible = entry.value.map((r) {
-        final p = _parentOf(r, records);
-        return p == null ? null : _groupKey(p);
-      }).toSet();
-      parents[entry.key] = possible.length == 1 && possible.single != entry.key
-          ? possible.single
-          : null;
-    }
-    final conflicts = <String>{};
-    try {
-      for (final conflict in InventoryRules.conflicts(widget.records)) {
-        conflicts.add(conflict.first.id);
-        conflicts.add(conflict.second.id);
-      }
-    } on FormatException {
-      /* Malformed records remain visible in the hierarchy. */
-    }
+    final scope = _model.scope(_routingDomain);
+    final records = scope.records;
+    final groups = scope.groups;
+    final conflicts = _model.conflictIds;
     final rendered = <String>{};
     Widget branch(String key, Set<String> ancestors) {
       final group = groups[key]!;
       final first = group.first;
       rendered.add(key);
-      final children = groups.keys
-          .where((k) => parents[k] == key && !ancestors.contains(k))
-          .toList();
-      final unresolved = group.any(
-        (r) =>
-            (r.parentId.isNotEmpty ||
-                r.kind == PrefixKind.subnet && r.vcnId.isNotEmpty) &&
-            _parentOf(r, records) == null,
-      );
+      final children = [
+        for (final k in scope.children[key] ?? const <String>[])
+          if (!ancestors.contains(k)) k,
+      ];
+      final unresolved = scope.unresolved.contains(key);
       final badges = group.map((r) => r.status.name).toSet().join(', ');
       return ExpansionTile(
         key: first.resourceId.isEmpty
@@ -1267,7 +1316,7 @@ class _VisualPlannerState extends State<VisualPlanner> {
     }
 
     final branches = <Widget>[];
-    for (final key in groups.keys.where((k) => parents[k] == null)) {
+    for (final key in groups.keys.where((k) => scope.parents[k] == null)) {
       branches.add(branch(key, {}));
     }
     for (final key in groups.keys.where((k) => !rendered.contains(k))) {
@@ -1307,33 +1356,171 @@ class _VisualPlannerState extends State<VisualPlanner> {
   }
 }
 
+/// Inventory-derived planner state, rebuilt only when the inventory changes.
+class _InventoryModel {
+  _InventoryModel(this.records, List<Conflict>? conflicts)
+    : byId = {for (final r in records.reversed) r.id: r},
+      conflictIds = _conflictIds(records, conflicts);
+
+  final List<PrefixRecord> records;
+
+  /// First record for each id.
+  final Map<String, PrefixRecord> byId;
+  final Set<String> conflictIds;
+  final _scopes = <String, _HierarchyScope>{};
+
+  static Set<String> _conflictIds(
+    List<PrefixRecord> records,
+    List<Conflict>? conflicts,
+  ) {
+    final ids = <String>{};
+    try {
+      for (final conflict in conflicts ?? InventoryRules.conflicts(records)) {
+        ids
+          ..add(conflict.first.id)
+          ..add(conflict.second.id);
+      }
+    } on FormatException {
+      /* Malformed records remain visible in the hierarchy. */
+    }
+    return ids;
+  }
+
+  /// The hierarchy for one routing domain, or for every record when
+  /// [routingDomain] is empty. Typing a manual domain creates short-lived
+  /// scopes, so only a few are retained.
+  _HierarchyScope scope(String routingDomain) {
+    final cached = _scopes[routingDomain];
+    if (cached != null) return cached;
+    if (_scopes.length >= 8) _scopes.clear();
+    return _scopes[routingDomain] = _HierarchyScope(
+      routingDomain.isEmpty
+          ? records
+          : [
+              for (final r in records)
+                if (r.routingDomain == routingDomain) r,
+            ],
+    );
+  }
+}
+
+/// Groups, resolved parents and children for the records in one scope.
+class _HierarchyScope {
+  _HierarchyScope(this.records) {
+    final byId = <String, PrefixRecord>{};
+    final vcns = <(String, String, String), List<PrefixRecord>>{};
+    for (final r in records) {
+      byId.putIfAbsent(r.id, () => r);
+      if (r.kind == PrefixKind.vcn) {
+        (vcns[(r.resourceId, r.tenancy, r.region)] ??= []).add(r);
+      }
+      groups.putIfAbsent(groupKey(r), () => []).add(r);
+    }
+    for (final group in groups.values) {
+      group.sort((a, b) => a.cidr.compareTo(b.cidr));
+    }
+    final parentOf = <PrefixRecord, PrefixRecord?>{
+      for (final r in records) r: _parentOf(r, byId, vcns),
+    };
+    for (final entry in groups.entries) {
+      final possible = {
+        for (final r in entry.value)
+          if (parentOf[r] case final parent?) groupKey(parent) else null,
+      };
+      final parent = possible.length == 1 && possible.single != entry.key
+          ? possible.single
+          : null;
+      parents[entry.key] = parent;
+      if (parent != null) (children[parent] ??= []).add(entry.key);
+      if (entry.value.any(
+        (r) =>
+            (r.parentId.isNotEmpty ||
+                r.kind == PrefixKind.subnet && r.vcnId.isNotEmpty) &&
+            parentOf[r] == null,
+      )) {
+        unresolved.add(entry.key);
+      }
+    }
+  }
+
+  final List<PrefixRecord> records;
+  final groups = <String, List<PrefixRecord>>{};
+  final parents = <String, String?>{};
+
+  /// Child group keys of each group, in group order.
+  final children = <String, List<String>>{};
+  final unresolved = <String>{};
+
+  static String groupKey(PrefixRecord r) =>
+      r.kind == PrefixKind.vcn && r.resourceId.isNotEmpty
+      ? 'vcn:${r.routingDomain}:${r.tenancy}:${r.region}:${r.resourceId}'
+      : 'prefix:${r.id}';
+
+  static bool _validParent(PrefixRecord parent, PrefixRecord child) =>
+      InventoryRules.validate([
+        parent.copyWith(parentId: ''),
+        child.copyWith(parentId: parent.id),
+      ]).isEmpty;
+
+  static PrefixRecord? _parentOf(
+    PrefixRecord record,
+    Map<String, PrefixRecord> byId,
+    Map<(String, String, String), List<PrefixRecord>> vcns,
+  ) {
+    if (record.parentId.isNotEmpty) {
+      final parent = byId[record.parentId];
+      return parent != null && _validParent(parent, record) ? parent : null;
+    }
+    if (record.kind != PrefixKind.subnet || record.vcnId.isEmpty) return null;
+    for (final vcn
+        in vcns[(record.vcnId, record.tenancy, record.region)] ??
+            const <PrefixRecord>[]) {
+      if (_validParent(vcn, record)) return vcn;
+    }
+    return null;
+  }
+}
+
 class _AddressMapPainter extends CustomPainter {
   const _AddressMapPainter({required this.summary, required this.candidate});
   final AddressSpaceSummary summary;
   final Cidr? candidate;
 
+  static const _top = 20.0;
+  static const _height = 56.0;
+
+  static double _x(AddressSpaceSummary summary, BigInt address, Size size) =>
+      ((address - summary.parent.networkAddress).toDouble() /
+              summary.totalAddresses.toDouble() *
+              size.width)
+          .clamp(0, size.width);
+
+  /// The candidate outline in unscaled map coordinates.
+  static Rect candidateRect(
+    AddressSpaceSummary summary,
+    Cidr candidate,
+    Size size,
+  ) {
+    final start = _x(summary, candidate.networkAddress, size);
+    final width = math.max(
+      4.0,
+      _x(summary, candidate.lastAddress + BigInt.one, size) - start,
+    );
+    return Rect.fromLTWH(
+      math.min(start, math.max(0, size.width - width)),
+      _top - 4,
+      width,
+      _height + 8,
+    );
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
-    final left = summary.parent.networkAddress;
-    final total = summary.totalAddresses;
-    double x(BigInt address) =>
-        ((address - left).toDouble() / total.toDouble() * size.width).clamp(
-          0,
-          size.width,
-        );
-    const top = 20.0;
-    const height = 56.0;
-    for (final interval in summary.freeIntervals) {
-      canvas.drawRect(
-        Rect.fromLTWH(
-          x(interval.start),
-          top,
-          math.max(1, x(interval.end + BigInt.one) - x(interval.start)),
-          height,
-        ),
-        Paint()..color = _free.withValues(alpha: 0.45),
-      );
-    }
+    double x(BigInt address) => _x(summary, address, size);
+    const top = _top;
+    const height = _height;
+    // Blocked space first, so a narrow free gap is drawn on top of it and
+    // stays visible.
     for (final interval in summary.blockedIntervals) {
       final rect = Rect.fromLTWH(
         x(interval.start),
@@ -1355,16 +1542,18 @@ class _AddressMapPainter extends CustomPainter {
       }
       canvas.restore();
     }
+    for (final interval in summary.freeIntervals) {
+      final span = x(interval.end + BigInt.one) - x(interval.start);
+      canvas.drawRect(
+        Rect.fromLTWH(x(interval.start), top, math.max(2, span), height),
+        // Opaque enough to read over blocked hatching when only the minimum
+        // marker width is drawn.
+        Paint()..color = _free.withValues(alpha: span < 2 ? 0.95 : 0.45),
+      );
+    }
     final selected = candidate;
     if (selected != null) {
-      final start = x(selected.networkAddress);
-      final width = math.max(4.0, x(selected.lastAddress + BigInt.one) - start);
-      final rect = Rect.fromLTWH(
-        math.min(start, math.max(0, size.width - width)),
-        top - 4,
-        width,
-        height + 8,
-      );
+      final rect = candidateRect(summary, selected, size);
       canvas.drawRect(
         rect,
         Paint()

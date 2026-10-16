@@ -16,12 +16,23 @@ import 'help.dart';
 String atlasLabel(String value) =>
     value.isEmpty ? value : '${value[0].toUpperCase()}${value.substring(1)}';
 String atlasError(Object error) =>
-    error is FormatException ? '${error.message}' : '$error';
+    error is FormatException ? error.message : '$error';
 
 class RecordEditor extends StatefulWidget {
-  const RecordEditor({super.key, required this.records, this.record});
+  const RecordEditor({
+    super.key,
+    required this.records,
+    this.record,
+    this.onSave,
+  });
   final List<PrefixRecord> records;
   final PrefixRecord? record;
+
+  /// Commits the reviewed record while the editor stays open. Returns `true`
+  /// when the record was saved, so the editor closes with it, or `false` to
+  /// keep editing. A thrown error is shown inline and the form input is kept.
+  /// Without it, the editor returns the reviewed record unsaved.
+  final Future<bool> Function(PrefixRecord record)? onSave;
   @override
   State<RecordEditor> createState() => _RecordEditorState();
 }
@@ -33,6 +44,44 @@ class _RecordEditorState extends State<RecordEditor> {
   late PrefixStatus _status;
   late String _parent;
   String? _error;
+  bool _saving = false;
+  final _errorKey = GlobalKey();
+  String? _advisoryParent;
+  List<String> _advisories = const [];
+
+  /// Non-blocking review notices for the edited record with the selected
+  /// parent, recomputed only when the parent selection changes.
+  List<String> _currentAdvisories() {
+    final record = widget.record;
+    if (record == null) return const [];
+    if (_advisoryParent != _parent) {
+      _advisoryParent = _parent;
+      _advisories = InventoryRules.advisories(
+        [
+          ...widget.records.where((r) => r.id != record.id),
+          record.copyWith(parentId: _parent),
+        ],
+        involving: {record.id},
+      );
+    }
+    return _advisories;
+  }
+
+  /// Fields observed by OCI discovery. The next OCI refresh restores them, so
+  /// they are read-only for records whose source is `oci`.
+  static const _observedFields = {
+    'name',
+    'cidr',
+    'routingDomain',
+    'tenancy',
+    'region',
+    'compartment',
+    'resourceId',
+    'vcnId',
+  };
+  static const observedHelper =
+      'Observed by OCI discovery; refresh from OCI to update.';
+  bool get _observed => widget.record?.source == 'oci';
   @override
   void initState() {
     super.initState();
@@ -74,32 +123,43 @@ class _RecordEditorState extends State<RecordEditor> {
     String? hint,
     String? helper,
     int lines = 1,
-  }) => TextFormField(
-    key: ValueKey('editor-$key'),
-    controller: _fields[key],
-    maxLines: lines,
-    decoration: InputDecoration(
-      labelText: label,
-      hintText: hint,
-      helperText: helper,
-      helperMaxLines: 3,
-    ),
-    validator: (value) {
-      if (required && (value == null || value.trim().isEmpty))
-        return '$label is required';
-      if (key == 'cidr' && value != null && value.trim().isNotEmpty) {
-        try {
-          Cidr.parse(value.trim());
-        } catch (error) {
-          return atlasError(error);
+  }) {
+    final readOnly = _observed && _observedFields.contains(key);
+    return TextFormField(
+      key: ValueKey('editor-$key'),
+      controller: _fields[key],
+      maxLines: lines,
+      readOnly: readOnly,
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: readOnly ? null : hint,
+        helperText: readOnly ? observedHelper : helper,
+        helperMaxLines: 3,
+        suffixIcon: readOnly
+            ? const Tooltip(
+                message: observedHelper,
+                child: Icon(Icons.lock_outline, size: 16),
+              )
+            : null,
+      ),
+      validator: (value) {
+        if (required && (value == null || value.trim().isEmpty)) {
+          return '$label is required';
         }
-      }
-      return null;
-    },
-  );
+        if (key == 'cidr' && value != null && value.trim().isNotEmpty) {
+          try {
+            Cidr.parse(value.trim());
+          } catch (error) {
+            return atlasError(error);
+          }
+        }
+        return null;
+      },
+    );
+  }
 
-  void _save() {
-    if (!_form.currentState!.validate()) return;
+  Future<void> _save() async {
+    if (_saving || !_form.currentState!.validate()) return;
     String value(String key) => _fields[key]!.text.trim();
     final original =
         widget.record ??
@@ -135,7 +195,31 @@ class _RecordEditorState extends State<RecordEditor> {
       setState(() => _error = errors.join('\n'));
       return;
     }
-    Navigator.pop(context, record);
+    final onSave = widget.onSave;
+    if (onSave == null) {
+      Navigator.pop(context, record);
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final saved = await onSave(record);
+      if (saved && mounted) Navigator.pop(context, record);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = atlasError(error));
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final panel = _errorKey.currentContext;
+          if (panel != null && panel.mounted) {
+            Scrollable.ensureVisible(panel);
+          }
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -162,6 +246,24 @@ class _RecordEditorState extends State<RecordEditor> {
                   'One record per CIDR. Overlaps remain visible in Conflicts; hierarchy must be explicitly declared.',
                   style: TextStyle(color: Color(0xff98a6bc), fontSize: 13),
                 ),
+                if (_observed) ...[
+                  const SizedBox(height: 14),
+                  const MessagePanel(
+                    message:
+                        'OCI discovery observed this network. Its name, CIDR, '
+                        'routing domain, kind and OCI identity are read-only '
+                        'because the next OCI refresh restores them. Status, '
+                        'parent, ownership and notes remain editable.',
+                  ),
+                ],
+                for (final (index, advisory)
+                    in _currentAdvisories().indexed) ...[
+                  const SizedBox(height: 14),
+                  MessagePanel(
+                    key: ValueKey('editor-advisory-$index'),
+                    message: 'Review notice (saving is not blocked): $advisory',
+                  ),
+                ],
                 const SizedBox(height: 22),
                 _field('name', 'Name', required: true, hint: 'Production VCN'),
                 const SizedBox(height: 16),
@@ -194,7 +296,11 @@ class _RecordEditorState extends State<RecordEditor> {
                     Expanded(
                       child: DropdownButtonFormField<PrefixKind>(
                         initialValue: _kind,
-                        decoration: const InputDecoration(labelText: 'Kind'),
+                        decoration: InputDecoration(
+                          labelText: 'Kind',
+                          helperText: _observed ? observedHelper : null,
+                          helperMaxLines: 3,
+                        ),
                         items: PrefixKind.values
                             .map(
                               (v) => DropdownMenuItem(
@@ -207,7 +313,9 @@ class _RecordEditorState extends State<RecordEditor> {
                               ),
                             )
                             .toList(),
-                        onChanged: (value) => setState(() => _kind = value!),
+                        onChanged: _observed
+                            ? null
+                            : (value) => setState(() => _kind = value!),
                       ),
                     ),
                     const SizedBox(width: 14),
@@ -290,8 +398,12 @@ class _RecordEditorState extends State<RecordEditor> {
                 _field('notes', 'Notes', lines: 3),
                 if (_error != null)
                   Padding(
+                    key: _errorKey,
                     padding: const EdgeInsets.only(top: 16),
-                    child: MessagePanel(message: _error!, error: true),
+                    child: Semantics(
+                      liveRegion: true,
+                      child: MessagePanel(message: _error!, error: true),
+                    ),
                   ),
               ],
             ),
@@ -303,7 +415,10 @@ class _RecordEditorState extends State<RecordEditor> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
-        FilledButton(onPressed: _save, child: const Text('Save prefix')),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          child: const Text('Save prefix'),
+        ),
       ],
     );
   }
@@ -395,8 +510,9 @@ class _CheckerDialogState extends State<CheckerDialog> {
   void _check() {
     try {
       final cidr = Cidr.parse(_cidr.text.trim());
-      if (_domain.text.trim().isEmpty)
+      if (_domain.text.trim().isEmpty) {
         throw const FormatException('Enter an explicit routing domain.');
+      }
       final candidate = PrefixRecord(
         id: '_check:${DateTime.now().microsecondsSinceEpoch}',
         cidr: cidr.canonical,
@@ -408,11 +524,7 @@ class _CheckerDialogState extends State<CheckerDialog> {
       final combined = [...widget.records, candidate];
       final errors = InventoryRules.validate(combined);
       if (errors.isNotEmpty) throw FormatException(errors.join('\n'));
-      final conflicts = InventoryRules.conflicts(combined)
-          .where(
-            (c) => c.first.id == candidate.id || c.second.id == candidate.id,
-          )
-          .toList();
+      final conflicts = InventoryRules.conflictsFor({candidate.id}, combined);
       setState(() {
         _valid = conflicts.isEmpty;
         _result = conflicts.isEmpty
@@ -541,11 +653,16 @@ class ImportDialog extends StatefulWidget {
     this.domain,
     this.proposedRecords,
     this.ociClient,
+    this.ociClientFactory,
   });
   final List<PrefixRecord> existing;
   final String? domain;
   final List<PrefixRecord> Function(ImportPreview)? proposedRecords;
   final OciInventoryClient? ociClient;
+
+  /// Creates OCI clients for discovery, including one bounded by an entered
+  /// collection time limit; see [OciDiscoveryDialog.clientFactory].
+  final OciClientFactory? ociClientFactory;
   @override
   State<ImportDialog> createState() => _ImportDialogState();
 }
@@ -600,7 +717,7 @@ class _ImportDialogState extends State<ImportDialog> {
       });
       _parse();
     } catch (error) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _fileError = atlasError(error);
           _preview = null;
@@ -608,6 +725,7 @@ class _ImportDialogState extends State<ImportDialog> {
           _combinedErrors = [];
           _combinedConflicts = 0;
         });
+      }
     }
   }
 
@@ -667,8 +785,11 @@ class _ImportDialogState extends State<ImportDialog> {
     });
     final selection = await showDialog<OciImportSelection>(
       context: context,
-      builder: (_) =>
-          OciDiscoveryDialog(client: widget.ociClient, domain: _domain.text),
+      builder: (_) => OciDiscoveryDialog(
+        client: widget.ociClient,
+        clientFactory: widget.ociClientFactory,
+        domain: _domain.text,
+      ),
     );
     if (!mounted || selection == null) return;
     setState(() {
@@ -918,7 +1039,7 @@ Future<void> exportInventory(
     name: 'inventory.$extension',
   );
   await file.saveTo(destination.path);
-  if (context.mounted)
+  if (context.mounted) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -926,4 +1047,5 @@ Future<void> exportInventory(
         ),
       ),
     );
+  }
 }

@@ -30,6 +30,9 @@ URLs can be selected and copied. Closing help retains the parent form or preview
    choose **All READY subscribed regions**. Select one direct compartment, or
    choose **All accessible compartments and subcompartments** to include tenancy
    root and every accessible active descendant in each chosen region.
+   Compartments are shown by path, such as `root / prod / network`, so
+   same-named compartments can be told apart; the selected OCID appears below
+   the selector.
 4. Enter a routing-domain name and select **Discover inventory**.
 5. Review the combined network CIDR count, validation, conflicts, coverage and
    observation details. **Apply import** saves a nonempty valid batch locally,
@@ -42,12 +45,26 @@ its directly contained resources; select the all-compartments option to include
 descendants. No manual network CIDR is needed for discovery.
 
 **Enter scope manually** accepts comma-separated region names and a compartment
-OCID when selectors cannot be loaded. Broad modes require successful live scope
+OCID when selectors cannot be loaded. Use full region identifiers such as
+`us-ashburn-1`; three-letter keys such as `IAD` are resolved through the
+tenancy's region subscriptions, and other forms are rejected. **Load scopes**
+keeps typed entries in manual mode. Broad modes require successful live scope
 enumeration; manual entry does not bypass IAM. All-region mode needs the profile's
 default region to list subscriptions. Non-READY subscriptions are excluded and
 reported. If a required list fails, the run stops with its failing scope and no
 partial import can be applied. Use a narrower scope or correct permissions before
 retrying. Cancellation leaves local inventory unchanged.
+
+Collection stops after 3 minutes for one region and compartment, or 30 minutes
+for broader scopes. For a large tenancy, enter whole minutes from 1 to 1440 in
+**Collection time limit, minutes (optional)**; leave it blank for the default.
+A collection that reaches its limit returns nothing to apply.
+
+The profile list comes from the configuration file you select, otherwise from
+`OCI_CLI_CONFIG_FILE` when that variable is visible to the app, otherwise from
+`~/.oci/config`. An app opened from Finder usually does not see variables
+exported in a terminal, so select the file explicitly when you use a
+non-default configuration.
 
 Compartment enumeration uses Oracle's tenancy-root subtree request with
 `ACCESSIBLE` and `ACTIVE`. INSPECT visibility is insufficient to guarantee network
@@ -96,6 +113,16 @@ template. CSV and Atlas backups retain their own routing domains; OCI JSON needs
 the domain selected in Import. Imports retain omitted resources and OCI refresh
 retains planning metadata such as ownership, status, hierarchy and notes.
 
+A row whose `id` matches an existing record updates only the columns in the
+file; columns you leave out keep their current values. A column that is present
+but blank clears that field. `verifiedAt` should carry `Z` or a UTC offset,
+such as `2026-10-15T18:30:00Z`; a zone-less value, as v0.3.0 exported, is read
+as local time and the preview says how many values were read that way. Exported CSV marks cells that a spreadsheet would treat
+as formulas with a leading `'`, which import removes again; a literal leading
+`'` before `=`, `+`, `-` or `@` in a hand-written file is removed too. When
+saving raw OCI CLI list output, use the CLI's `--all` option; a truncated page
+produces a warning because unlisted ranges would look free.
+
 ## Choose the next range
 
 Choose the routing domain, then an existing allocation/VCN pool or a manual
@@ -130,8 +157,10 @@ The inspector's child-slot count is theoretical and labeled **before blockers**.
 
 Review a candidate, choose **Reserve selected CIDR**, and review its record before
 saving. The store rechecks current conflicts and identity in the write transaction.
+If saving fails, the message appears in the open editor and your input is kept.
 The saved rationale explains sizing and placement. A local reservation does not
-provision OCI resources. Recalculate after changing inputs or inventory.
+provision OCI resources. Recalculate after changing inputs or inventory;
+refreshing the inventory, including **Export all**, clears current results.
 
 ## Routing domain and coverage
 
@@ -151,14 +180,16 @@ coverage. Include unimported connected ranges before relying on a recommendation
 
 ## CLI examples
 
-Use an isolated database for fictional examples. These commands preview results:
+Use an isolated database in a private directory for fictional examples. These
+commands preview results:
 
 ```bash
-cidrctl --db /tmp/cidr-atlas-example.sqlite import csv --file examples/fictional_inventory.csv
-cidrctl --db /tmp/cidr-atlas-example.sqlite discover oci --profile EXAMPLE --region us-phoenix-1,us-ashburn-1 --all-compartments --routing-domain fictional-connected
-cidrctl --db /tmp/cidr-atlas-example.sqlite discover oci --profile EXAMPLE --all-regions --all-compartments --routing-domain fictional-connected
-cidrctl --db /tmp/cidr-atlas-example.sqlite recommend --pool 10.90.0.0/20 --routing-domain fictional-connected --prefix 24
-cidrctl --db /tmp/cidr-atlas-example.sqlite recommend --pool 10.90.0.0/20 --routing-domain fictional-connected --addresses 100 --growth-percent 20 --additional 4 --policy oci_ipv4 --kind subnet
+mkdir -p ~/tmp
+cidrctl --db ~/tmp/cidr-atlas-example.sqlite import csv --file examples/fictional_inventory.csv
+cidrctl --db ~/tmp/cidr-atlas-example.sqlite discover oci --profile EXAMPLE --region us-phoenix-1,us-ashburn-1 --all-compartments --routing-domain fictional-connected
+cidrctl --db ~/tmp/cidr-atlas-example.sqlite discover oci --profile EXAMPLE --all-regions --all-compartments --routing-domain fictional-connected
+cidrctl --db ~/tmp/cidr-atlas-example.sqlite recommend --pool 10.90.0.0/20 --routing-domain fictional-connected --prefix 24
+cidrctl --db ~/tmp/cidr-atlas-example.sqlite recommend --pool 10.90.0.0/20 --routing-domain fictional-connected --addresses 100 --growth-percent 20 --additional 4 --policy oci_ipv4 --kind subnet
 ```
 
 For discovery, use repeated/comma-separated `--region` or `--all-regions`, and
@@ -168,7 +199,26 @@ READY subscriptions.
 
 Add `--parent ID` for an existing pool. Apply import with `--apply`, or reserve a
 recommendation with `--apply --name NAME`, after reviewing the intended inputs.
-Opening a database path may create the file; previews write no inventory/history
-records. `cidrctl --help` and each command's `--help` include workflow guidance.
-Keep exported backups protected and transfer JSON files rather than synchronizing
-a live SQLite database through shared folders.
+Opening a database path may create the file, with a warning on stderr; previews
+write no inventory/history records. A discovery that finds no networks exits 0
+and creates no database. A routing domain with no existing records prints a
+warning naming known domains and near matches. A recommendation preview with no
+fitting candidate exits 0 with a warning; `--apply` then exits 1. Add
+`--collection-timeout SECONDS` (30 to 86400) for a broad discovery that needs
+more than the default limit. `cidrctl --help` and each command's `--help`
+include workflow guidance.
+Keep live-discovery databases and exported backups in a protected directory,
+not a shared one such as `/tmp`, and transfer JSON files rather than
+synchronizing a live SQLite database through shared folders.
+
+## Sample data, history and OCI records
+
+**Explore with fictional sample data** adds sample records, labeled with source
+`demo`, only to an empty inventory. **Remove sample data** in the inventory
+table header removes all of them in one change; it is refused if one of your
+records uses a sample network as its parent. Records imported from OCI keep
+their observed fields read-only in the editor; refresh from OCI to update them,
+and edit status, parent, customer, owner, environment and notes locally. A
+parent with children cannot be deleted until the children are deleted or
+re-parented. History shows the latest 100 changes, with **Load more** when
+older changes exist.

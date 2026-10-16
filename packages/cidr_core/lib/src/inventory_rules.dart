@@ -25,48 +25,135 @@ abstract final class InventoryRules {
   ///
   /// Invalid CIDRs are reported by [validate] and skipped here. Merely being
   /// numerically contained does not establish a legitimate hierarchy.
-  static List<Conflict> conflicts(List<PrefixRecord> records) {
+  ///
+  /// Pairs are ordered by the position of [Conflict.first] in [records], then
+  /// by the position of [Conflict.second], and [Conflict.first] always comes
+  /// earlier in [records]. Runtime grows with the inventory size times its
+  /// logarithm plus the number of overlapping pairs, not with every pair.
+  static List<Conflict> conflicts(List<PrefixRecord> records) =>
+      _sweep(records, null);
+
+  /// The subset of [conflicts] in which [Conflict.first] or [Conflict.second]
+  /// has an id in [changedIds], in the same order and orientation.
+  ///
+  /// Use this to check a few edited or reserved records against a large
+  /// inventory: routing domains without a changed record are not examined,
+  /// and ancestry is evaluated only for overlapping pairs involving a change.
+  static List<Conflict> conflictsFor(
+    Set<String> changedIds,
+    List<PrefixRecord> records,
+  ) {
+    if (changedIds.isEmpty) return [];
+    final changed = List<bool>.generate(
+      records.length,
+      (i) => changedIds.contains(records[i].id),
+      growable: false,
+    );
+    if (!changed.contains(true)) return [];
+    return _sweep(records, changed);
+  }
+
+  static List<Conflict> _sweep(
+      List<PrefixRecord> records, List<bool>? changed) {
     final index = InventoryIndex(records);
-    final result = <Conflict>[];
+    final buckets = <(String, int), List<_Entry>>{};
     for (var i = 0; i < records.length; i++) {
-      final first = records[i];
-      final firstNetwork = index.networks[first];
-      if (first.status == PrefixStatus.retired || firstNetwork == null) {
+      final record = records[i];
+      final network = index.networks[record];
+      if (record.status == PrefixStatus.retired || network == null) continue;
+      (buckets[(record.routingDomain.trim(), network.version)] ??= [])
+          .add(_Entry(i, network));
+    }
+    final pairs = <(int, int)>[];
+    for (final bucket in buckets.values) {
+      if (changed != null && !bucket.any((entry) => changed[entry.index])) {
         continue;
       }
-      for (var j = i + 1; j < records.length; j++) {
-        final second = records[j];
-        final secondNetwork = index.networks[second];
-        if (second.status == PrefixStatus.retired ||
-            secondNetwork == null ||
-            !sameRoutingDomain(first.routingDomain, second.routingDomain) ||
-            !firstNetwork.overlaps(secondNetwork)) {
-          continue;
-        }
-        final linked =
-            (index.validAncestors(first)?.contains(second.id) ?? false) ||
-                (index.validAncestors(second)?.contains(first.id) ?? false);
-        if (linked) {
-          continue;
-        }
-        result.add(
-          Conflict(
-            first: first,
-            second: second,
-            reason: firstNetwork == secondNetwork
-                ? 'Duplicate CIDR ${firstNetwork.canonical} in routing domain ${first.routingDomain}.'
-                : '${firstNetwork.canonical} overlaps ${secondNetwork.canonical} without a valid parent or OCI VCN/subnet relationship.',
-          ),
+      bucket.sort((a, b) {
+        final start = a.network.networkAddress.compareTo(
+          b.network.networkAddress,
         );
+        return start != 0 ? start : a.index.compareTo(b.index);
+      });
+      final active = <_Entry>[];
+      for (final current in bucket) {
+        final start = current.network.networkAddress;
+        active.removeWhere((entry) => entry.network.lastAddress < start);
+        // Every remaining active entry starts no later than [current] and
+        // ends at or after its start, so the two ranges overlap.
+        for (final other in active) {
+          if (changed != null &&
+              !changed[other.index] &&
+              !changed[current.index]) {
+            continue;
+          }
+          final first = other.index < current.index ? other : current;
+          final second = identical(first, other) ? current : other;
+          final firstRecord = records[first.index];
+          final secondRecord = records[second.index];
+          final linked = (index
+                      .validAncestors(firstRecord)
+                      ?.contains(secondRecord.id) ??
+                  false) ||
+              (index.validAncestors(secondRecord)?.contains(firstRecord.id) ??
+                  false);
+          if (!linked) pairs.add((first.index, second.index));
+        }
+        active.add(current);
       }
     }
-    return result;
+    pairs.sort((a, b) {
+      final first = a.$1.compareTo(b.$1);
+      return first != 0 ? first : a.$2.compareTo(b.$2);
+    });
+    return [
+      for (final (i, j) in pairs)
+        _conflict(
+          records[i],
+          records[j],
+          index.networks[records[i]]!,
+          index.networks[records[j]]!,
+        ),
+    ];
   }
+
+  static Conflict _conflict(
+    PrefixRecord first,
+    PrefixRecord second,
+    Cidr firstNetwork,
+    Cidr secondNetwork,
+  ) =>
+      Conflict(
+        first: first,
+        second: second,
+        reason: firstNetwork == secondNetwork
+            ? 'Duplicate CIDR ${firstNetwork.canonical} in routing domain ${first.routingDomain}.'
+            : '${firstNetwork.canonical} overlaps ${secondNetwork.canonical} without a valid parent or OCI VCN/subnet relationship.',
+      );
 
   /// Structural errors prevent a save. Overlap conflicts remain inspectable
   /// inventory data and therefore are deliberately not returned here.
   static List<String> validate(List<PrefixRecord> records) =>
       validateInventory(records);
+
+  /// Human-readable review notices that, unlike [validate], never prevent a
+  /// save, reservation or import.
+  ///
+  /// A subnet whose explicit parent is a placeholder VCN without a resource id
+  /// is reported when its `vcnId` names a comparable VCN recorded elsewhere in
+  /// the inventory: not retired, in the same routing domain, and in the same
+  /// tenancy and region wherever both records set them. The notice names the
+  /// subnet, the recorded VCN by name, CIDR and resource id, and the
+  /// placeholder parent, and asks to clear or change the parent. The link
+  /// itself remains a valid hierarchy, as it was before the VCN was recorded.
+  ///
+  /// With [involving], only notices that concern a record with one of those
+  /// ids (the subnet, its parent, or the recorded VCN) are returned.
+  static List<String> advisories(
+    List<PrefixRecord> records, {
+    Set<String>? involving,
+  }) =>
+      inventoryAdvisories(records, involving: involving);
 
   /// Finds the first free aligned subnet blocks without enumerating the
   /// address space. Runtime is bounded by the inventory size and [limit],
@@ -124,4 +211,11 @@ abstract final class InventoryRules {
     }
     return result;
   }
+}
+
+final class _Entry {
+  const _Entry(this.index, this.network);
+
+  final int index;
+  final Cidr network;
 }

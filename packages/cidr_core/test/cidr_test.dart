@@ -44,6 +44,9 @@ void main() {
         '10.0.0.0 /8',
         '10.0.0.0/ 8',
         '10.0.0.0/8.0',
+        '10.0.0.0/08',
+        '10.0.0.0/016',
+        '10.0.0.0/0000000000000000000000000000000008',
         '',
       ]) {
         expect(() => Cidr.parse(value), throwsFormatException, reason: value);
@@ -117,9 +120,18 @@ void main() {
         ':1:2:3:4:5:6:7/128',
         '1:2:3:4:5:6:7:/128',
         '2001:db8::/ -1',
+        '::/00',
+        '2001:db8::/032',
       ]) {
         expect(() => Cidr.parse(value), throwsFormatException, reason: value);
       }
+      expect(Cidr.parse('::/0').canonical, '::/0');
+      expect(Cidr.parse('2001:db8::/128').prefixLength, 128);
+      expect(
+        () => Cidr.parse('10.0.0.0/08'),
+        throwsA(isA<FormatException>()
+            .having((error) => error.message, 'message', contains('leading'))),
+      );
     });
   });
 

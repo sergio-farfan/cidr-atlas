@@ -37,7 +37,7 @@ release_dir="$project_root/build/releases"
 mkdir -p "$release_dir"
 asset_name="CIDR-Atlas-$version-macos-universal.dmg"
 image_path="$release_dir/$asset_name"
-staging_dir="$(mktemp -d "${TMPDIR:-/tmp}/cidr-atlas-dmg.XXXXXX")"
+staging_dir="$(mktemp -d "$project_root/build/cidr-atlas-dmg.XXXXXX")"
 mounted=false
 cleanup() {
   if [[ "$mounted" == true ]]; then

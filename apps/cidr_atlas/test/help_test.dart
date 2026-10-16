@@ -49,6 +49,19 @@ void main() {
     expect(selected.selected, isTrue);
   });
 
+  testWidgets('empty-result guidance uses the preview network CIDR label', (
+    tester,
+  ) async {
+    // The import preview reports '<n> network CIDRs · <source>'.
+    for (final topic in [HelpTopic.gettingStarted, HelpTopic.ociDiscovery]) {
+      await openHelp(tester, topic: topic);
+      expect(find.textContaining('0 network CIDRs'), findsWidgets);
+      expect(find.textContaining('0 prefixes'), findsNothing);
+      await tester.tap(find.text('Close help'));
+      await tester.pumpAndSettle();
+    }
+  });
+
   testWidgets('contextual initial topic opens its guide directly', (
     tester,
   ) async {

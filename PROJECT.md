@@ -12,6 +12,11 @@ New installations start empty; optional demo inventories are fictional.
 
 ## Current implementation
 
+The last published release is v0.3.0 (see Release status). The working tree
+also holds an unreleased review remediation, recorded in
+[the remediation plan](docs/plans/2026-10-16-review-remediation.md). No new build,
+DMG or release has been produced from it, and version numbers are unchanged.
+
 The v0.3.0 implementation adds one/several selected regions or all READY subscribed
 regions, independently paired with one direct compartment or all accessible active
 compartments and subcompartments, including tenancy root. It collects all resource
@@ -45,21 +50,79 @@ selection, empty results, manual CIDRs, planning prefixes, capacity and routing
 domains with fictional copyable examples. Empty live results keep Apply disabled;
 validation errors remain visible without duplicates. Coverage is expandable.
 
+Unreleased remediation, by package (details in `docs/CONTRACT.md`):
+
+- **Core:** conflict detection is a sorted sweep, O(n log n + overlapping pairs),
+  with unchanged results and ordering; `conflictsFor` checks changed records only.
+  A subnet whose explicit parent is a placeholder VCN while its VCN OCID names a
+  comparable VCN recorded elsewhere is reported by the non-blocking
+  `InventoryRules.advisories` (name, CIDR and OCID of the recorded VCN, the
+  placeholder parent, and "clear or change the parent"); the link stays valid as
+  in v0.3.0, so such inventories remain writable and an OCI refresh that brings
+  in the real VCN applies. `parseObservationTime` is the strict timestamp parser;
+  `tryParseStoredTimestamp` is exported for stored and legacy values; records
+  write `verifiedAt` in UTC. Prefix lengths with leading
+  zeros are rejected, and planning reports a malformed blocker by record ID.
+- **Data:** id-matched CSV rows merge only the columns supplied; id-less row
+  collisions are row-numbered errors, with a warning when an id-less row replaces a
+  differently named record. OCI previews warn about retired records still observed
+  live, bundles older than existing observations and truncated raw CLI pages. CSV
+  export guards formula cells with a lossless round trip. CSV and backup
+  `verifiedAt` reject calendar rollover; the zone-less form v0.3.0 exported is read
+  as local time with a counting preview warning, so v0.3.0 backups and CSV exports
+  restore. OCI refresh matches records by OCID regardless of region spelling, so
+  records v0.3.0 stored under `IAD` or an uppercase region are updated in place,
+  keep their planning fields and take the canonical region (also carried to an
+  unobserved linked VCN or subnet). Previews list advisories as warnings. Deleting a parent with children is refused
+  with an explanation; `deleteAll` removes several records in one transaction.
+  `defaultDatabasePath` is shared by the CLI and app. Rollback errors no longer
+  mask the original failure.
+- **OCI adapter:** regions are canonicalized (three-letter keys resolved through
+  subscriptions) before deduplication; compartments carry parent OCIDs and display
+  paths. Requests use 10 s connect and 15 s read timeouts with `--max-retries 3`
+  (three attempts in OCI CLI 3.94.1) and a 120 s command bound. Structured
+  `OciDiscoveryProgress` reports scope count and the limit in effect. The profile
+  parser follows ConfigParser; `~/` and `$HOME/bin/oci` executable lookup added.
+- **CLI:** `export --file` refuses the open database and replaces other files
+  atomically, keeping their mode. `reserve` writes through the store's strict
+  reservation path and prints placeholder-parent advisories on stderr;
+  `recommend --apply` with no candidate prints `No reservation was saved.` instead
+  of the preview hint. New stderr warnings for a newly created empty database and an
+  unused routing domain; an empty live discovery exits 0; the database path is
+  checked before OCI collection; `--collection-timeout` added; the configuration
+  file and profile used are printed. Several usage errors now exit 2 consistently.
+- **App:** shared default database path (macOS path unchanged), Planner input
+  validation messages, cached planner hierarchy, address-axis zoom with **Zoom to
+  candidate**, compartment paths, editor errors kept inline, read-only observed
+  OCI fields, a non-blocking placeholder-parent notice in the record editor,
+  labeled and removable sample data, history paging, an optional
+  discovery time limit, and screen-reader semantics for candidates, errors and
+  progress.
+- **Hygiene:** consistent lint configuration in every package
+  (`package:lints/recommended.yaml`; `flutter_lints` for the app), missing file
+  headers, `scripts/cidrctl` dependency freshness, DMG staging under `build/`,
+  unused `path_provider`/`path` app dependencies removed, and `~/tmp` examples.
+
 ## OCI collection contract
 
 The shared adapter uses an existing local OCI CLI/profile; private-key and token
 access stays within the CLI. Metadata selection is explicit, as are network
 requests. There is no automatic sign-in, provisioning, background collection or
 credential creation. Requests use explicit profile/config/auth/region/JSON,
-isolated rc/environment defaults, all pages and bounded retries.
+isolated rc/environment defaults and all pages. Without an explicit configuration
+file, `OCI_CLI_CONFIG_FILE` (when set) or `~/.oci/config` is used.
 
 Collection is sequential with progress, cancellation and safe operation/scope
-errors. Per-command deadline is 60 seconds; whole collection defaults to 180
-seconds for one selected pair and 1800 seconds for broader modes. A required
-failure returns no bundle. Denied/not-found referenced VCN context remains a
-warning; context queries use the actual region. Coverage records modes, actual
-regions/compartments, completed scopes/resource counts, observation interval and
-context outcomes. It is not a complete or transactionally consistent tenancy audit.
+errors. In the remediated tree each request passes `--connection-timeout 10`,
+`--read-timeout 15` and `--max-retries 3`, and each command is bounded to 120
+seconds (v0.3.0: 60 seconds and `--max-retries 1`, which in OCI CLI 3.94.1 meant a
+single attempt). Whole collection defaults to 180 seconds for one selected pair
+and 1800 seconds for broader modes, adjustable through `--collection-timeout` or
+the discovery dialog. A required failure returns no bundle. Denied/not-found
+referenced VCN context remains a warning; context queries use the actual region.
+Coverage records modes, actual regions/compartments, completed scopes/resource
+counts, observation interval and context outcomes. It is not a complete or
+transactionally consistent tenancy audit.
 
 Validated against installed OCI CLI 3.94.1 and Oracle's
 [compartment list](https://docs.oracle.com/en-us/iaas/tools/oci-cli/latest/oci_cli_docs/cmdref/iam/compartment/list.html),
@@ -71,7 +134,8 @@ Root-only subtree enumeration uses ACCESSIBLE and ACTIVE, adding root once.
 Only READY subscriptions are included in all-region mode. A successful blank CLI
 list is accepted only for known list commands, consistent with Oracle's
 [3.94.1 CLI renderer](https://github.com/oracle/oci-cli/blob/v3.94.1/src/oci_cli/cli_util.py#L893-L947);
-empty object gets remain invalid.
+empty object gets remain invalid. The retry and timeout semantics come from the
+installed CLI's `--help` and its SDK source, not from a run against a tenancy.
 
 ## Verification
 
@@ -79,14 +143,33 @@ Toolchain: macOS 26.7.1 Apple Silicon, Xcode 27.0 (27A266a), Flutter 3.47.7,
 Dart 3.13.5, OCI CLI 3.94.1. Native dependencies use Swift Package Manager.
 Machine-specific SDK paths are not tracked.
 
-v0.3.0 verification completed:
+Unreleased remediation, verified 2026-10-16 on the working tree:
+
+- Core: 72 tests passed (v0.3.0: 50).
+- Data/imports: 124 tests passed (v0.3.0: 78).
+- OCI adapter: 110 tests passed (v0.3.0: 83; before the remediation this machine
+  ran 82 plus one failure that depended on `PUB_CACHE` being set, now fixed).
+- CLI: 83 tests passed (v0.3.0: 49).
+- Flutter: 116 widget tests passed (v0.3.0: 72).
+
+All 505 package/widget tests passed. `dart format --set-exit-if-changed` changed no
+files in any package, and `dart analyze` / `flutter analyze` reported no issues
+under the stricter lint configuration. Tests use fictional runners, isolated
+temporary or memory stores and a fictional `HOME`; no live tenancy was collected,
+no OCI configuration was read and the default inventory was not opened. A string
+comparison on this Mac during the remediation confirmed that the shared default path equals the v0.3.0
+app path. No native app, CLI executable or DMG was built from the remediated tree,
+so native behavior (file dialogs, the shared database at runtime, packaging) has
+not been re-verified. The Windows branches of path canonicalization and default
+paths have not been run.
+
+v0.3.0 release verification (the last published release):
 
 - Core: 50 tests passed; analyzer clean.
 - Data/imports: 78 tests passed; analyzer clean. New fictional multi-region tests
   verify regional identities and parents, atomic apply, repeat refresh retaining
   local fields/absent regions, rollback for an invalid later record, and visible
   same-domain overlap across regions.
-
 - OCI adapter: 83 tests passed; analyzer clean, including all scope combinations,
   root/region deduplication, pagination, regional context, READY exclusions, empty
   results, late required failures, cancellation and single/broad deadlines.
@@ -137,7 +220,46 @@ Signing is ad hoc; no Developer ID signature or notarization ticket exists. Loca
 verification does not establish Gatekeeper acceptance on another Mac. The app has
 App Sandbox disabled for local CLI process access and shared app/CLI storage.
 
+Versions are unchanged by the remediation: `cidr_core`, `cidr_data` and `cidr_oci`
+are 0.1.0, `cidr_cli` is 0.3.0 and the app is 0.3.0+4. `cidrctl --version` comes
+from a constant in `packages/cidr_cli/lib/cidr_cli.dart`; a test now ties it to
+the CLI pubspec. The declared SDK floors (>=3.4.0 for core and OCI, >=3.5.0 for
+data and CLI) are lower than the lockfiles resolve (>=3.11.0); raising them to
+>=3.11.0 was tried in a scratch copy and deferred, because it switches
+`dart format` to the tall style and would reformat about 37 files.
+
 ## Next actions
+
+Review and commit the remediation, then build, natively verify and publish a
+release that includes it. Decisions recorded in the remediation plan:
+
+- All-compartments mode: continue past a compartment that denies network listing
+  and record it as unobserved coverage, instead of failing the whole collection
+  (changes the documented fail-closed contract; #19).
+- Strict variants: require `--force` to overwrite an existing export file (#0);
+  read-only commands refuse a nonexistent database instead of warning (#9);
+  case-insensitive routing-domain identity (#45).
+- Release provenance (clean-tree check, source commit in the DMG; #56), a CI
+  workflow (#57), a platform gate for OCI discovery on iOS (#63), and blocker
+  attribution, per-status map patterns and planner view filters (#64).
+- Broad-mode collection strategy (bounded concurrency or a Search pre-filter)
+  beyond the timeout option.
+- SDK floors and package version alignment (#53): raise the floors together with
+  a one-time tall-style reformat, and decide whether library packages follow the
+  release version.
+- Follow-ups from the remediation: JSON backup records with missing keys merge
+  rather than replace (#1); a writability probe for an existing but unwritable
+  database directory before collection (#37); lazy rendering of very large
+  planner hierarchies (#5); an `Export all` widget test (#7); a process-level
+  SIGINT test for `discover` (#40); an iOS branch in `defaultDatabasePath` before
+  an iOS app uses it; a refresh-without-change that keeps planner results; a
+  repair path for inventories that already hold two copies of one OCID/CIDR under
+  different region spellings (such a refresh now stops with "Multiple existing
+  records match"); one intermittent `cidr_oci` failure observed once in 13 full
+  runs and not reproduced under load, so harden the real-process timing tests.
+- IPAM roadmap: prioritize from the Infoblox comparison in
+  `docs/design/2026-10-16-ipam-feature-assessment.md` (Tier 1 items need no record
+  model change).
 
 Scope the observed connectivity collector and topology model while retaining
 address inventory and allocation as the main workflows. Wider distribution

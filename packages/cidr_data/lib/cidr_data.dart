@@ -4,5 +4,6 @@
 
 library;
 
+export 'src/default_path.dart';
 export 'src/import.dart';
 export 'src/store.dart';

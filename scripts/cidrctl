@@ -14,8 +14,29 @@ if [[ -z "$dart_executable" || ! -x "$dart_executable" ]]; then
 fi
 
 cd "$project_root/packages/cidr_cli"
-if [[ ! -f .dart_tool/package_config.json ]]; then
+# Resolve again when the package config is missing or older than any
+# dependency declaration the CLI resolution depends on.
+package_config=.dart_tool/package_config.json
+needs_pub_get=false
+if [[ ! -f "$package_config" ]]; then
+  needs_pub_get=true
+else
+  for dependency_file in \
+    pubspec.yaml \
+    pubspec.lock \
+    ../cidr_core/pubspec.yaml \
+    ../cidr_data/pubspec.yaml \
+    ../cidr_oci/pubspec.yaml; do
+    if [[ "$dependency_file" -nt "$package_config" ]]; then
+      needs_pub_get=true
+      break
+    fi
+  done
+fi
+if [[ "$needs_pub_get" == true ]]; then
   "$dart_executable" pub get >&2
+  # pub leaves an unchanged package config untouched; record this check.
+  touch "$package_config"
 fi
 cd "$invocation_directory"
 exec "$dart_executable" \

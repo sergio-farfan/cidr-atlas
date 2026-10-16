@@ -10,6 +10,7 @@ import 'package:cidr_core/cidr_core.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:sqlite3/open.dart' as sqlite_loader;
 
+import 'identity.dart';
 import 'import.dart';
 
 class AuditEntry {
@@ -67,8 +68,9 @@ class InventoryStore {
   }
 
   factory InventoryStore.open(String path) {
-    if (path.trim().isEmpty)
+    if (path.trim().isEmpty) {
       throw ArgumentError('Database path cannot be blank.');
+    }
     File(path).parent.createSync(recursive: true);
     _prepareSqlite();
     return InventoryStore._(sqlite3.open(path));
@@ -146,12 +148,10 @@ class InventoryStore {
       }
       _validate(combined.values.toList());
       if (rejectConflicts) {
-        final changedIds = records.map((record) => record.id).toSet();
-        final conflicts = InventoryRules.conflicts(combined.values.toList())
-            .where((conflict) =>
-                changedIds.contains(conflict.first.id) ||
-                changedIds.contains(conflict.second.id))
-            .toList();
+        final conflicts = InventoryRules.conflictsFor(
+          records.map((record) => record.id).toSet(),
+          combined.values.toList(),
+        );
         if (conflicts.isNotEmpty) throw InventoryConflictException(conflicts);
       }
       _write(records);
@@ -163,15 +163,63 @@ class InventoryStore {
     });
   }
 
-  void delete(String id) {
+  /// Deletes one record. A record that other records name as their parent is
+  /// refused with an explanation; delete or re-parent the children first.
+  void delete(String id) => deleteAll([id]);
+
+  /// Deletes several records in one transaction, validating the remaining
+  /// inventory once and writing one audit entry. Unknown ids are ignored, so
+  /// children and parents may be listed in any order. A record that a
+  /// remaining record names as its parent is refused with an explanation.
+  void deleteAll(List<String> ids) {
     _ensureOpen();
     _transaction(() {
       final current = list();
-      if (!current.any((record) => record.id == id)) return;
-      _validate(current.where((record) => record.id != id).toList());
-      _database.execute('DELETE FROM prefixes WHERE id = ?', [id]);
-      _audit('delete', 'Deleted prefix $id.');
+      final byId = {for (final record in current) record.id: record};
+      final targets = {
+        for (final id in ids)
+          if (byId.containsKey(id)) id
+      };
+      if (targets.isEmpty) return;
+      final remaining =
+          current.where((record) => !targets.contains(record.id)).toList();
+      for (final id in targets) {
+        final children =
+            remaining.where((record) => record.parentId == id).toList();
+        if (children.isNotEmpty) {
+          throw FormatException(_childrenMessage(byId[id]!, children));
+        }
+      }
+      _validate(remaining);
+      final statement = _database.prepare('DELETE FROM prefixes WHERE id = ?');
+      try {
+        for (final id in targets) {
+          statement.execute([id]);
+        }
+      } finally {
+        statement.dispose();
+      }
+      _audit(
+        'delete',
+        targets.length == 1
+            ? 'Deleted prefix ${targets.single}.'
+            : 'Deleted ${targets.length} prefixes: ${targets.join(', ')}.',
+      );
     });
+  }
+
+  static String _childrenMessage(
+      PrefixRecord parent, List<PrefixRecord> children) {
+    const shown = 5;
+    final names = [
+      for (final child in children.take(shown)) '${child.name} (${child.cidr})',
+      if (children.length > shown) 'and ${children.length - shown} more',
+    ].join(', ');
+    final count = children.length == 1
+        ? '1 child prefix references it'
+        : '${children.length} child prefixes reference it';
+    return 'Cannot delete ${parent.name} (${parent.cidr}): $count: $names. '
+        'Delete or re-parent them first.';
   }
 
   void applyImport(ImportPreview preview) {
@@ -208,15 +256,7 @@ class InventoryStore {
     if (ociImport) {
       for (final incoming in preview.records) {
         final matches = current.values
-            .where((existing) =>
-                existing.resourceId.isNotEmpty &&
-                existing.resourceId == incoming.resourceId &&
-                existing.kind == incoming.kind &&
-                Cidr.parse(existing.cidr).canonical ==
-                    Cidr.parse(incoming.cidr).canonical &&
-                existing.routingDomain == incoming.routingDomain &&
-                _sameKnownScope(existing.tenancy, incoming.tenancy) &&
-                _sameKnownScope(existing.region, incoming.region))
+            .where((existing) => sameOciIdentity(existing, incoming))
             .toList();
         if (matches.length > 1) {
           throw FormatException(
@@ -230,9 +270,19 @@ class InventoryStore {
             'Multiple imported OCI prefixes map to one existing record.');
       }
     }
+    // Region spellings replaced by an OCI refresh, by record id.
+    final respelled = <String, (String, String)>{};
     for (final incoming in preview.records) {
       final targetId = aliases[incoming.id] ?? incoming.id;
       final existing = current[targetId];
+      if (existing != null &&
+          ociImport &&
+          incoming.source == 'oci' &&
+          existing.region.isNotEmpty &&
+          incoming.region.isNotEmpty &&
+          existing.region != incoming.region) {
+        respelled[targetId] = (existing.region, incoming.region);
+      }
       final normalized = incoming.copyWith(
         id: targetId,
         parentId: aliases[incoming.parentId] ?? incoming.parentId,
@@ -255,23 +305,28 @@ class InventoryStore {
                   ? existing.compartment
                   : incoming.compartment,
             )
-          : normalized;
+          : existing != null
+              ? preview.mergeOnto(existing, normalized)
+              : normalized;
       current[record.id] = record;
     }
+    if (respelled.isNotEmpty) _respellLinkedRegions(current, respelled);
     if (ociImport) {
       for (final incoming in preview.records) {
         final targetId = aliases[incoming.id] ?? incoming.id;
         final child = current[targetId]!;
         if (child.kind != PrefixKind.subnet ||
             child.parentId.isNotEmpty ||
-            child.vcnId.isEmpty) continue;
+            child.vcnId.isEmpty) {
+          continue;
+        }
         final parents = current.values
             .where((candidate) =>
                 candidate.kind == PrefixKind.vcn &&
                 candidate.resourceId == child.vcnId &&
                 candidate.routingDomain == child.routingDomain &&
-                _sameKnownScope(candidate.tenancy, child.tenancy) &&
-                _sameKnownScope(candidate.region, child.region) &&
+                sameKnownScope(candidate.tenancy, child.tenancy) &&
+                sameKnownScope(candidate.region, child.region) &&
                 Cidr.parse(candidate.cidr).contains(Cidr.parse(child.cidr)))
             .toList();
         if (parents.isEmpty) continue;
@@ -299,13 +354,53 @@ class InventoryStore {
     return List.unmodifiable(current.values);
   }
 
-  static bool _sameKnownScope(String first, String second) =>
-      first.isEmpty || second.isEmpty || first == second;
+  /// Carries a refreshed region spelling across explicit VCN/subnet parent
+  /// links. A record matched by OCID may change from a v0.3.0 spelling such
+  /// as `IAD` to `us-ashburn-1`; a linked VCN or subnet that this import did
+  /// not observe, and that still holds exactly the old spelling, receives the
+  /// new one so the link does not appear to cross regions.
+  static void _respellLinkedRegions(
+    Map<String, PrefixRecord> current,
+    Map<String, (String, String)> respelled,
+  ) {
+    final childrenByParent = <String, List<String>>{};
+    for (final record in current.values) {
+      if (record.parentId.isNotEmpty) {
+        (childrenByParent[record.parentId] ??= []).add(record.id);
+      }
+    }
+    final pending = respelled.entries.toList();
+    while (pending.isNotEmpty) {
+      final MapEntry(key: id, value: (from, to)) = pending.removeLast();
+      final record = current[id];
+      if (record == null) continue;
+      final linked = <String>[
+        if (record.kind == PrefixKind.subnet) record.parentId,
+        if (record.kind == PrefixKind.vcn) ...?childrenByParent[id],
+      ];
+      for (final otherId in linked) {
+        final other = current[otherId];
+        if (other == null ||
+            other.region != from ||
+            respelled.containsKey(otherId)) {
+          continue;
+        }
+        final isPair = (record.kind == PrefixKind.subnet &&
+                other.kind == PrefixKind.vcn) ||
+            (record.kind == PrefixKind.vcn && other.kind == PrefixKind.subnet);
+        if (!isPair) continue;
+        current[otherId] = other.copyWith(region: to);
+        respelled[otherId] = (from, to);
+        pending.add(MapEntry(otherId, (from, to)));
+      }
+    }
+  }
 
   List<AuditEntry> history({int limit = 100}) {
     _ensureOpen();
-    if (limit < 0)
+    if (limit < 0) {
       throw ArgumentError.value(limit, 'limit', 'Must be nonnegative.');
+    }
     return _database.select(
       'SELECT action, summary, at FROM audit_entries ORDER BY id DESC LIMIT ?',
       [limit],
@@ -353,8 +448,9 @@ class InventoryStore {
   void _checkDuplicateIds(List<PrefixRecord> records) {
     final ids = <String>{};
     for (final record in records) {
-      if (!ids.add(record.id))
+      if (!ids.add(record.id)) {
         throw FormatException('Duplicate record id: ${record.id}.');
+      }
     }
   }
 
@@ -367,9 +463,17 @@ class InventoryStore {
     try {
       body();
       _database.execute('COMMIT');
-    } catch (_) {
-      _database.execute('ROLLBACK');
-      rethrow;
+    } catch (error, stack) {
+      // SQLite rolls back by itself on some failures (for example a full disk,
+      // an I/O error or RAISE(ROLLBACK)). An explicit ROLLBACK would then fail
+      // and hide the original cause, so roll back only an open transaction and
+      // always surface the original error.
+      if (!_database.autocommit) {
+        try {
+          _database.execute('ROLLBACK');
+        } catch (_) {}
+      }
+      Error.throwWithStackTrace(error, stack);
     }
   }
 }

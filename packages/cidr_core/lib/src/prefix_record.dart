@@ -2,6 +2,8 @@
 // Prefix identity and planning metadata.
 // Author: Sergio Farfan <sergio.farfan@gmail.com>
 
+import 'observation_time.dart';
+
 enum PrefixKind { allocation, vcn, subnet }
 
 enum PrefixStatus { planned, reserved, active, retired }
@@ -48,6 +50,8 @@ final class PrefixRecord {
   final String parentId;
   final String notes;
   final String source;
+
+  /// Source observation time. [toJson] always writes it in UTC.
   final DateTime? verifiedAt;
 
   Map<String, dynamic> toJson() => {
@@ -68,9 +72,15 @@ final class PrefixRecord {
         'parentId': parentId,
         'notes': notes,
         'source': source,
-        'verifiedAt': verifiedAt?.toIso8601String(),
+        'verifiedAt': verifiedAt?.toUtc().toIso8601String(),
       };
 
+  /// Reads a record written by [toJson].
+  ///
+  /// `verifiedAt` values with `Z` or a UTC offset are returned in UTC.
+  /// Zone-less values, which older versions wrote for local timestamps, are
+  /// still read as local time on this machine. Out-of-range dates such as
+  /// February 30 are rejected rather than rolled over.
   factory PrefixRecord.fromJson(Map<String, dynamic> json) {
     String field(String key, {bool required = false}) {
       final value = json[key];
@@ -91,7 +101,7 @@ final class PrefixRecord {
 
     DateTime? verifiedAt;
     if (json['verifiedAt'] != null && json['verifiedAt'] != '') {
-      verifiedAt = DateTime.tryParse(field('verifiedAt'));
+      verifiedAt = tryParseStoredTimestamp(field('verifiedAt'));
       if (verifiedAt == null) {
         throw const FormatException('Invalid verifiedAt timestamp.');
       }

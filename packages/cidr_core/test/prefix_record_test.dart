@@ -80,4 +80,87 @@ void main() {
       expect(() => PrefixRecord.fromJson({}), throwsFormatException);
     },
   );
+
+  group('observation time', () {
+    test('parseObservationTime requires an explicit zone and returns UTC', () {
+      final offset = parseObservationTime('2026-10-15T20:30:00.123+02:00');
+      expect(offset.isUtc, isTrue);
+      expect(offset, DateTime.utc(2026, 10, 15, 18, 30, 0, 123));
+      expect(
+        parseObservationTime('2026-10-15T13:30-05:00'),
+        DateTime.utc(2026, 10, 15, 18, 30),
+      );
+      expect(
+        parseObservationTime('2026-10-15T18:30:00.000123Z'),
+        DateTime.utc(2026, 10, 15, 18, 30, 0, 0, 123),
+      );
+      expect(
+        parseObservationTime('2026-10-15T18:30:00.1234567Z'),
+        DateTime.utc(2026, 10, 15, 18, 30, 0, 123, 456),
+      );
+      expect(parseObservationTime('2024-02-29T00:00:00Z'),
+          DateTime.utc(2024, 2, 29));
+      for (final value in [
+        '2026-10-16 12:00',
+        '2026-10-15T10:00:00',
+        '2026-10-15',
+        '2026-13-45',
+        '2026-13-45T00:00:00Z',
+        '2026-02-30T00:00:00Z',
+        '2026-02-29T00:00:00Z',
+        '2026-10-15T24:00:00Z',
+        '2026-10-15T23:60:00Z',
+        '2026-10-15T23:59:60Z',
+        '2026-10-15T18:30:00+24:00',
+        '2026-10-15T18:30:00+0200',
+        '20261015T183000Z',
+        'yesterday',
+        '',
+      ]) {
+        expect(() => parseObservationTime(value), throwsFormatException,
+            reason: value);
+      }
+    });
+
+    test('fromJson rejects calendar rollover and keeps zoned values in UTC',
+        () {
+      const valid = {
+        'id': '1',
+        'cidr': '10.0.0.0/16',
+        'name': 'x',
+        'routingDomain': 'test',
+      };
+      for (final value in [
+        '2026-13-45',
+        '2026-02-30T00:00:00Z',
+        '2026-10-15T24:00:00.000Z',
+        '2026-10-15T23:59:60',
+      ]) {
+        expect(() => PrefixRecord.fromJson({...valid, 'verifiedAt': value}),
+            throwsFormatException,
+            reason: value);
+      }
+      final zoned = PrefixRecord.fromJson(
+          {...valid, 'verifiedAt': '2026-10-15T20:30:00.000+02:00'});
+      expect(zoned.verifiedAt, DateTime.utc(2026, 10, 15, 18, 30));
+    });
+
+    test('zone-less stored values keep their legacy local meaning', () {
+      // Older versions serialized local DateTimes without a zone.
+      final local = DateTime(2026, 10, 15, 10);
+      final restored = PrefixRecord.fromJson({
+        'id': '1',
+        'cidr': '10.0.0.0/16',
+        'name': 'x',
+        'routingDomain': 'test',
+        'verifiedAt': local.toIso8601String(),
+      });
+      expect(restored.verifiedAt!.isAtSameMomentAs(local), isTrue);
+      // Writing normalizes to UTC so the instant survives a time-zone change.
+      final written = restored.toJson()['verifiedAt'] as String;
+      expect(written, endsWith('Z'));
+      expect(written, local.toUtc().toIso8601String());
+      expect(parseObservationTime(written).isAtSameMomentAs(local), isTrue);
+    });
+  });
 }

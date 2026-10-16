@@ -13,7 +13,13 @@ import 'package:cidr_core/cidr_core.dart';
 import 'package:cidr_data/cidr_data.dart';
 import 'package:cidr_oci/cidr_oci.dart';
 
+import 'src/export_file.dart';
 import 'src/recommendation.dart';
+import 'src/routing_domains.dart';
+
+// The default database location is defined once, in cidr_data; the CLI keeps
+// exposing the name it published before.
+export 'package:cidr_data/cidr_data.dart' show defaultDatabasePath;
 
 const _version = '0.3.0';
 
@@ -30,6 +36,8 @@ Future<int> runCidrctlAsync(
   final errors = err ?? stderr;
   final parser = _parser();
   late ArgResults root;
+  Duration? collectionTimeout;
+  var database = '';
   try {
     root = parser.parse(arguments);
   } on FormatException {
@@ -67,10 +75,21 @@ Future<int> runCidrctlAsync(
           'Use --compartment-id or --all-compartments, not both.');
     }
     if (!allCompartments) _required(command, 'compartment-id');
+    collectionTimeout = _collectionTimeout(command);
+    // Resolve the local database before contacting OCI, so a missing HOME or
+    // an unusable path fails fast instead of after a long collection. The
+    // store itself opens only after a successful discovery.
+    database =
+        _databasePath(command, root, environment ?? Platform.environment);
+    _checkDatabaseLocation(database, write: command['apply'] as bool);
   } on FormatException catch (error) {
     errors.writeln('Usage error: ${error.message}');
     errors.writeln('Run cidrctl discover oci --help.');
     return 2;
+  } on FileSystemException catch (error) {
+    errors.writeln('File error: ${error.message} (${error.path ?? database}). '
+        'Check --db before discovery.');
+    return 1;
   }
   final command = root.command!;
   final token = cancellation ?? OciCancellation();
@@ -79,7 +98,8 @@ Future<int> runCidrctlAsync(
   try {
     _checkCancellation(token);
     interrupt = ProcessSignal.sigint.watch().listen((_) => token.cancel());
-    final client = ociClient ?? OciCliClient();
+    final client =
+        ociClient ?? OciCliClient(collectionTimeout: collectionTimeout);
     final auth = switch (command['auth'] as String?) {
       'api_key' => OciAuthMode.apiKey,
       'security_token' => OciAuthMode.securityToken,
@@ -91,7 +111,11 @@ Future<int> runCidrctlAsync(
       executable: command['oci-bin'] as String?,
       authMode: auth,
     );
+    errors.writeln('Using OCI configuration ${connection.configFile}, '
+        'profile ${connection.profile} '
+        '(${connection.authMode == OciAuthMode.securityToken ? 'security_token' : 'api_key'} authentication).');
     _checkCancellation(token);
+    var scopeAnnounced = false;
     final discovery = await client.discover(
       connection,
       regions: _discoveryRegions(command),
@@ -101,17 +125,44 @@ Future<int> runCidrctlAsync(
           : _required(command, 'compartment-id'),
       allCompartments: command['all-compartments'] as bool,
       cancellation: token,
-      onProgress: errors.writeln,
+      onDiscoveryProgress: (progress) {
+        final count = progress.scopeCount;
+        if (!scopeAnnounced && count != null) {
+          scopeAnnounced = true;
+          // The explicit flag is what the CLI gave its own adapter; otherwise
+          // the adapter reports the default for the resolved scope.
+          final limit = collectionTimeout ?? progress.collectionTimeout;
+          errors.writeln('Collecting $count region/compartment '
+              'scope${count == 1 ? '' : 's'} with ${count * 2} sequential '
+              'list requests within the ${limit.inSeconds}-second '
+              '${collectionTimeout == null ? 'default ' : ''}collection limit.');
+        }
+        errors.writeln(progress.message);
+      },
     );
     _checkCancellation(token);
-    final db = (command['db'] as String?) ??
-        (root['db'] as String?) ??
-        defaultDatabasePath(environment ?? Platform.environment);
-    store = InventoryStore.open(db);
+    final domain = _required(command, 'routing-domain');
+    // An empty observation needs no inventory: report it without opening or
+    // creating the database, for both preview and --apply.
+    final observed =
+        InventoryImport.json(discovery.bundleJson, routingDomain: domain);
+    if (observed.isEmptyResult) {
+      for (final warning in {...discovery.warnings, ...observed.warnings}) {
+        output.writeln('Warning: $warning');
+      }
+      output.writeln('Discovery completed: no networks were found in the '
+          'selected scope. No records were changed.');
+      return 0;
+    }
+    final existed = File(database).existsSync();
+    store = InventoryStore.open(database);
+    if (!existed) _warnCreated(database, errors);
+    final existing = store.list();
+    warnUnknownRoutingDomain(existing, domain, errors);
     final preview = InventoryImport.json(
       discovery.bundleJson,
-      routingDomain: _required(command, 'routing-domain'),
-      existingRecords: store.list(),
+      routingDomain: domain,
+      existingRecords: existing,
     );
     for (final warning in discovery.warnings) {
       output.writeln('Warning: $warning');
@@ -126,9 +177,10 @@ Future<int> runCidrctlAsync(
     errors.writeln(
         'Discovery returned invalid inventory. No records were changed.');
     return 1;
-  } on FileSystemException {
-    errors.writeln(
-        'Discovery could not access a required file. Check paths and permissions.');
+  } on FileSystemException catch (error) {
+    errors.writeln('Discovery could not access a required file'
+        '${error.path == null ? '' : ' (${error.path})'}. '
+        'Check paths and permissions; the inventory database is $database.');
     return 1;
   } catch (_) {
     errors.writeln(
@@ -138,6 +190,71 @@ Future<int> runCidrctlAsync(
     store?.close();
     await interrupt?.cancel();
   }
+}
+
+const _maximumCollectionSeconds = 86400;
+const _minimumCollectionSeconds = 30;
+
+Duration? _collectionTimeout(ArgResults command) {
+  final raw = (command['collection-timeout'] as String?)?.trim();
+  if (raw == null) return null;
+  final seconds = RegExp(r'^[0-9]+$').hasMatch(raw) ? int.tryParse(raw) : null;
+  if (seconds == null ||
+      seconds < _minimumCollectionSeconds ||
+      seconds > _maximumCollectionSeconds) {
+    throw const FormatException('--collection-timeout must be a whole number '
+        'of seconds from $_minimumCollectionSeconds to '
+        '$_maximumCollectionSeconds.');
+  }
+  return Duration(seconds: seconds);
+}
+
+/// The command database, global database, or shared default location.
+/// Missing environment for the default and a blank path are usage errors.
+String _databasePath(
+    ArgResults command, ArgResults root, Map<String, String> environment) {
+  final explicit = (command['db'] as String?) ?? (root['db'] as String?);
+  if (explicit != null) {
+    if (explicit.trim().isEmpty) {
+      throw const FormatException('--db cannot be blank.');
+    }
+    return explicit;
+  }
+  try {
+    return defaultDatabasePath(environment);
+  } on StateError catch (error) {
+    throw FormatException(error.message);
+  }
+}
+
+/// Checks, without creating anything, that [path] can hold a database file:
+/// it is not a directory, its nearest existing ancestor is a directory, and,
+/// when [write] is set, an existing file can be opened for writing.
+void _checkDatabaseLocation(String path, {required bool write}) {
+  final type = FileSystemEntity.typeSync(path);
+  if (type == FileSystemEntityType.directory) {
+    throw FileSystemException('The database path is a directory', path);
+  }
+  if (type != FileSystemEntityType.notFound) {
+    if (write) File(path).openSync(mode: FileMode.append).closeSync();
+    return;
+  }
+  var ancestor = File(path).absolute.parent;
+  while (FileSystemEntity.typeSync(ancestor.path) ==
+          FileSystemEntityType.notFound &&
+      ancestor.parent.path != ancestor.path) {
+    ancestor = ancestor.parent;
+  }
+  if (FileSystemEntity.typeSync(ancestor.path) !=
+      FileSystemEntityType.directory) {
+    throw FileSystemException(
+        'The database location is inside a file, not a directory', path);
+  }
+}
+
+void _warnCreated(String path, StringSink errors) {
+  errors.writeln('Warning: created a new empty inventory at $path. '
+      'If you expected existing records, check --db.');
 }
 
 void _checkCancellation(OciCancellation cancellation) {
@@ -170,10 +287,15 @@ int runCidrctl(
     }
     final command = root.command;
     if ((root['help'] as bool) || command == null) {
+      final misuse =
+          command == null && arguments.isNotEmpty && !(root['help'] as bool);
+      if (misuse) {
+        errors.writeln(root.rest.isEmpty
+            ? 'Usage error: a command is required.'
+            : 'Usage error: unknown command ${root.rest.first}.');
+      }
       _usage(parser, output);
-      return command == null && arguments.isNotEmpty && !(root['help'] as bool)
-          ? 2
-          : 0;
+      return misuse ? 2 : 0;
     }
     final commandParser = parser.commands[command.name]!;
     if (command['help'] as bool) {
@@ -184,10 +306,10 @@ int runCidrctl(
       throw const FormatException(
           'Discovery requires the asynchronous CLI entrypoint.');
     }
-    final db = (command['db'] as String?) ??
-        (root['db'] as String?) ??
-        defaultDatabasePath(env);
+    final db = _databasePath(command, root, env);
+    final existed = File(db).existsSync();
     store = InventoryStore.open(db);
+    if (!existed) _warnCreated(db, errors);
     switch (command.name) {
       case 'list':
         _requireRest(command, 0);
@@ -197,10 +319,17 @@ int runCidrctl(
       case 'check':
       case 'reserve':
         _requireRest(command, 1);
-        final candidate = _candidate(command, command.name == 'reserve');
+        final reserve = command.name == 'reserve';
+        final candidate = _candidate(command, reserve);
+        final current = store.list();
+        if (reserve && current.any((record) => record.id == candidate.id)) {
+          _writeDuplicate(candidate, errors);
+          return 1;
+        }
         // An explicit id can check an edit against all other current records.
         final records =
-            store.list().where((record) => record.id != candidate.id).toList();
+            current.where((record) => record.id != candidate.id).toList();
+        warnUnknownRoutingDomain(records, candidate.routingDomain, errors);
         final combined = [...records, candidate];
         final validation = InventoryRules.validate(combined);
         if (validation.isNotEmpty) {
@@ -209,11 +338,12 @@ int runCidrctl(
           }
           return 1;
         }
-        final conflicts = InventoryRules.conflicts(combined)
-            .where((conflict) =>
-                conflict.first.id == candidate.id ||
-                conflict.second.id == candidate.id)
-            .toList();
+        // Review notices never change the result or exit code.
+        for (final advisory
+            in InventoryRules.advisories(combined, involving: {candidate.id})) {
+          errors.writeln('Advisory: $advisory');
+        }
+        final conflicts = InventoryRules.conflictsFor({candidate.id}, combined);
         if (conflicts.isNotEmpty) {
           output.writeln('Conflicts for ${candidate.cidr} in '
               '${candidate.routingDomain}:');
@@ -226,19 +356,20 @@ int runCidrctl(
           }
           return 3;
         }
-        if (command.name == 'reserve') {
-          if (store.list().any((record) => record.id == candidate.id)) {
-            errors.writeln('A record with id ${candidate.id} already exists. '
-                'Reserve creates new records; use the app to edit it.');
-            return 1;
-          }
+        if (reserve) {
+          // The store rechecks identity, structure and conflicts inside the
+          // write transaction, so a concurrent writer cannot be overwritten.
           try {
-            store.save(candidate, rejectConflicts: true);
+            store.reserve(candidate);
           } on InventoryConflictException catch (error) {
             errors.writeln('Reservation was not saved: $error');
             return 3;
           } on FormatException catch (error) {
-            errors.writeln('Reservation was not saved: ${error.message}');
+            if (store.list().any((record) => record.id == candidate.id)) {
+              _writeDuplicate(candidate, errors);
+            } else {
+              errors.writeln('Reservation was not saved: ${error.message}');
+            }
             return 1;
           }
           output.writeln('Reserved ${candidate.cidr} as ${candidate.name} '
@@ -265,13 +396,20 @@ int runCidrctl(
         if (file == null) {
           output.writeln(content);
         } else {
-          File(file).writeAsStringSync(content);
+          if (file.trim().isEmpty) {
+            throw const FormatException('--file cannot be blank.');
+          }
+          checkExportDestination(file, db);
+          writeExportAtomically(file, content);
           output.writeln('Exported ${records.length} records to $file.');
         }
         return 0;
       case 'history':
         _requireRest(command, 0);
-        final limit = int.tryParse(command['limit'] as String);
+        final rawLimit = (command['limit'] as String).trim();
+        final limit = RegExp(r'^[0-9]+$').hasMatch(rawLimit)
+            ? int.tryParse(rawLimit)
+            : null;
         if (limit == null || limit < 1) {
           throw const FormatException('--limit must be a positive integer.');
         }
@@ -311,26 +449,6 @@ int runCidrctl(
   } finally {
     store?.close();
   }
-}
-
-/// Uses the same support-directory layout as the graphical application.
-String defaultDatabasePath(Map<String, String> environment) {
-  final home = environment['HOME'] ?? environment['USERPROFILE'];
-  if (Platform.isMacOS) {
-    if (home == null) throw StateError('HOME is not set; specify --db.');
-    return '$home/Library/Application Support/cidr_atlas/inventory.sqlite';
-  }
-  if (Platform.isWindows) {
-    final appData = environment['APPDATA'];
-    if (appData == null) throw StateError('APPDATA is not set; specify --db.');
-    return '$appData/cidr_atlas/inventory.sqlite';
-  }
-  final dataHome = environment['XDG_DATA_HOME'];
-  if (dataHome != null && dataHome.isNotEmpty) {
-    return '$dataHome/cidr_atlas/inventory.sqlite';
-  }
-  if (home == null) throw StateError('HOME is not set; specify --db.');
-  return '$home/.local/share/cidr_atlas/inventory.sqlite';
 }
 
 ArgParser _parser() {
@@ -403,6 +521,13 @@ ArgParser _parser() {
     ..addOption('auth',
         allowed: ['api_key', 'security_token'],
         help: 'Authentication override; otherwise use profile authentication.')
+    ..addOption('collection-timeout',
+        valueHelp: 'seconds',
+        help: 'Whole-discovery time limit, $_minimumCollectionSeconds to '
+            '$_maximumCollectionSeconds seconds. Default: '
+            '${OciCollectionLimits.singleScope.inSeconds} for one region and '
+            'compartment, ${OciCollectionLimits.broadScope.inSeconds} for '
+            'broader scopes.')
     ..addFlag('apply',
         negatable: false,
         help: 'Write after successful discovery and import validation.');
@@ -448,7 +573,11 @@ Examples (fictional scopes; preview only):
   cidrctl discover oci --profile EXAMPLE --all-regions --all-compartments --routing-domain fictional-connected
 Accessible compartment visibility does not grant network-list permission or expose IAM-hidden scopes.
 Any failed required enumeration/list returns no applicable partial inventory.
-An empty result has nothing to apply; review profile, regions, scope and IAM permissions.
+Without --config-file, OCI_CLI_CONFIG_FILE (when set) or ~/.oci/config is used.
+Progress on stderr names the OCI configuration file and profile used, then the
+region/compartment scope count once enumeration finishes. A large broad scope
+can exceed the default limit; raise it with --collection-timeout SECONDS.
+An empty result exits 0 with nothing to apply; review profile, regions, scope and IAM permissions.
 One combined preview precedes atomic apply. Absent records are retained; omissions do not prove free IPs.
 Add --apply only after reviewing the intended scope and preview.''',
     'import' =>
@@ -457,6 +586,7 @@ CSV and Atlas backups retain their routing domains. OCI JSON requires a domain.
 Example (preview only):
   cidrctl import csv --file examples/fictional_inventory.csv
   cidrctl import oci --file examples/fictional_oci_bundle.json --routing-domain fictional-connected
+Use --routing-domain only for OCI JSON; it is rejected for CSV and Atlas backups.
 Apply requires a nonempty valid preview. An empty file has nothing to save.
 Add --apply only after review; absent existing records are retained.''',
     'recommend' =>
@@ -477,13 +607,16 @@ Use the same routing-domain name for connected networks and --parent ID for appr
 Example:
   cidrctl check 10.64.0.0/24 --routing-domain fictional-connected
   cidrctl reserve 10.64.0.0/24 --name fictional-subnet --kind subnet --routing-domain fictional-connected
-Reserve saves a local record; it does not provision an OCI network.''',
+Reserve saves a new local record and refuses an existing id; it does not provision an OCI network.
+A routing domain with no existing records prints a warning naming the known domains.''',
     null => '''When is a prefix needed?
   discover/import: CIDRs come from OCI or the inventory file.
   check/reserve: enter a full CIDR such as 10.64.0.0/24.
   recommend: select a pool, then --prefix 24 or --addresses with explicit growth.
 Use cidrctl <command> --help for guidance and fictional examples.
-Use --db PATH for a separate local inventory. Imports/recommendations preview by default.''',
+Use --db PATH for a separate local inventory. Imports/recommendations preview by default.
+A command that creates a new empty inventory file warns on stderr; check --db if unexpected.
+Export --file replaces an ordinary existing file but refuses the open inventory database.''',
     _ => 'Use cidrctl --help to choose a workflow.',
   });
 }
@@ -508,6 +641,11 @@ void _requireRest(ArgResults command, int count) {
     throw FormatException('$count positional argument(s) required for '
         '${command.name}.');
   }
+}
+
+void _writeDuplicate(PrefixRecord candidate, StringSink errors) {
+  errors.writeln('A record with id ${candidate.id} already exists. '
+      'Reserve creates new records; use the app to edit it.');
 }
 
 String _required(ArgResults command, String key) {
@@ -622,11 +760,19 @@ int _import(InventoryStore store, ArgResults command, StringSink output,
       : command.rest.single;
   final source = File(path).readAsStringSync();
   final domain = (command['routing-domain'] as String?) ?? '';
-  if (type == 'oci' && domain.trim().isEmpty) {
+  final json = type == 'csv' ? null : _jsonObject(source);
+  final backupContent = json != null && _isBackup(json);
+  final ociContent = json != null && !backupContent;
+  if (command.wasParsed('routing-domain') && (type == 'csv' || backupContent)) {
+    throw const FormatException('--routing-domain applies only to OCI JSON '
+        'imports; CSV rows and Atlas backups keep their own routing domains.');
+  }
+  if ((type == 'oci' || ociContent) && domain.trim().isEmpty) {
     throw const FormatException(
         '--routing-domain is required for OCI imports.');
   }
   final existing = store.list();
+  if (ociContent) warnUnknownRoutingDomain(existing, domain, errors);
   final preview = type == 'csv'
       ? InventoryImport.csv(source, existingRecords: existing)
       : InventoryImport.json(source,
@@ -634,6 +780,23 @@ int _import(InventoryStore store, ArgResults command, StringSink output,
   return _applyPreview(
       store, preview, command['apply'] as bool, output, errors);
 }
+
+/// The decoded JSON object, or null when [source] is not a JSON object; the
+/// import itself reports malformed input.
+Map<String, dynamic>? _jsonObject(String source) {
+  try {
+    final decoded = jsonDecode(source);
+    return decoded is Map ? Map<String, dynamic>.from(decoded) : null;
+  } on FormatException {
+    return null;
+  }
+}
+
+/// Mirrors the backup detection in [InventoryImport.json].
+bool _isBackup(Map<String, dynamic> root) =>
+    root.containsKey('format') ||
+    root.containsKey('records') ||
+    root.containsKey('version');
 
 int _applyPreview(InventoryStore store, ImportPreview preview, bool apply,
     StringSink output, StringSink errors) {

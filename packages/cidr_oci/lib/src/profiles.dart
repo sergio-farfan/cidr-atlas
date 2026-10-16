@@ -14,8 +14,9 @@ String configurationPath(String? requested, Map<String, String> environment) {
   if (path.trim().isEmpty) {
     throw const OciException('Choose an existing OCI configuration file.');
   }
-  if (path.startsWith('~/') && home != null)
+  if (path.startsWith('~/') && home != null) {
     return '$home/${path.substring(2)}';
+  }
   return File(path).absolute.path;
 }
 
@@ -23,29 +24,53 @@ Future<List<OciProfile>> readProfiles(String path) async {
   final sections = <String, Map<String, String>>{};
   final keys = <String, Set<String>>{};
   String? current;
+  // ConfigParser state: the option a deeper-indented line continues, the
+  // indent of the last header or option line, and blank lines inside a value.
+  String? continuing;
+  var indentLevel = 0;
+  var pendingBlankLines = 0;
   try {
     await for (final original in File(path)
         .openRead()
         .transform(utf8.decoder)
         .transform(const LineSplitter())) {
       final line = original.trim();
-      if (line.isEmpty || line.startsWith('#') || line.startsWith(';'))
+      if (line.isEmpty) {
+        pendingBlankLines++;
         continue;
-      if (line.startsWith('[')) {
-        if (!line.endsWith(']') || line.length < 3)
-          throw const FormatException();
-        final name = line.substring(1, line.length - 1);
-        if (name.isEmpty || sections.containsKey(name))
-          throw const FormatException();
+      }
+      if (line.startsWith('#') || line.startsWith(';')) continue;
+      final blankLines = pendingBlankLines;
+      pendingBlankLines = 0;
+      final indent = original.length - original.trimLeft().length;
+      if (continuing != null && indent > indentLevel) {
+        // Continuations extend the previous value, as ConfigParser does.
+        // Only retained metadata keeps the text; credentials are never stored.
+        final value = sections[current]![continuing];
+        if (continuing == 'security_token_file') {
+          sections[current]![continuing] = 'present';
+        } else if (value != null) {
+          sections[current]![continuing] = '$value${'\n' * blankLines}\n$line';
+        }
+        continue;
+      }
+      indentLevel = indent;
+      // ConfigParser matches `[` + greedy header + `]` and ignores the rest.
+      final header = _sectionHeader.firstMatch(line);
+      if (header != null) {
+        final name = header.group(1)!;
+        if (sections.containsKey(name)) throw const FormatException();
         sections[name] = {};
         keys[name] = {};
         current = name;
+        continuing = null;
         continue;
       }
       final separator = line.indexOf(RegExp('[=:]'));
       if (current == null || separator < 1) throw const FormatException();
       final key = line.substring(0, separator).trim().toLowerCase();
       if (!keys[current]!.add(key)) throw const FormatException();
+      continuing = key;
       // Secret values and credential paths are never retained in metadata.
       if (key == 'tenancy' || key == 'region') {
         sections[current]![key] = line.substring(separator + 1).trim();
@@ -75,6 +100,8 @@ Future<List<OciProfile>> readProfiles(String path) async {
   }));
 }
 
+final _sectionHeader = RegExp(r'^\[(.+)\]');
+
 Future<String> findExecutable(String? override, Map<String, String> environment,
     List<String> standardCandidates) async {
   Future<bool> executableFile(String path) async {
@@ -88,7 +115,10 @@ Future<String> findExecutable(String? override, Map<String, String> environment,
   }
 
   if (override != null) {
-    final candidate = File(override).absolute.path;
+    final home = environment['HOME'] ?? environment['USERPROFILE'];
+    final candidate = override.startsWith('~/') && home != null
+        ? File('$home/${override.substring(2)}').absolute.path
+        : File(override).absolute.path;
     if (await executableFile(candidate)) return candidate;
     throw const OciException(
         'The selected OCI executable is missing or not executable. Choose an installed OCI CLI.');

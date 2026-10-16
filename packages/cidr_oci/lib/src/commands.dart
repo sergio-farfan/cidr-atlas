@@ -72,12 +72,16 @@ class OciCommands {
             'json',
             '--cli-rc-file',
             '${temporary.path}/empty_rc',
+            // OCI CLI 3.94.1 maps --max-retries to the SDK max_attempts, which
+            // counts total attempts: 3 is one try plus two retries. Three
+            // attempts of 10 s connect + 15 s read plus SDK backoff (about
+            // 5 s for two retries) fit inside the 120 s default command bound.
             '--connection-timeout',
             '10',
             '--read-timeout',
-            '60',
+            '15',
             '--max-retries',
-            '1',
+            '3',
             ...suffix,
           ]),
           environment: Map.unmodifiable(safeEnvironment),
@@ -107,10 +111,12 @@ class OciCommands {
       } on FormatException {
         throw malformedResponse(step, 'CLI output was not valid JSON');
       }
-      if (decoded is! Map<String, dynamic>)
+      if (decoded is! Map<String, dynamic>) {
         throw malformedResponse(step, 'expected a JSON object envelope');
-      if (!decoded.containsKey('data'))
+      }
+      if (!decoded.containsKey('data')) {
         throw malformedResponse(step, 'required field "data" was missing');
+      }
       return decoded['data'];
     } catch (error) {
       local.cancel();
@@ -146,8 +152,9 @@ class OciCommands {
       if (begin < 0 || end < begin) continue;
       try {
         final decoded = jsonDecode(output.substring(begin, end + 1));
-        if (decoded is Map && decoded['code'] is String)
+        if (decoded is Map && decoded['code'] is String) {
           code = decoded['code'] as String;
+        }
       } on FormatException {/* Never expose unstructured CLI errors. */}
     }
     final authFailure = const {
@@ -175,8 +182,9 @@ class OciCommandFailure extends OciException {
 }
 
 void checkCancellation(OciCancellation? cancellation) {
-  if (cancellation?.isCancelled ?? false)
+  if (cancellation?.isCancelled ?? false) {
     throw const OciException('OCI request cancelled.');
+  }
 }
 
 OciException malformedResponse(String step, String detail) => OciException(
@@ -185,20 +193,23 @@ OciException malformedResponse(String step, String detail) => OciException(
 String requiredString(Map<String, dynamic> object, String key,
     {required String step}) {
   final value = object[key];
-  if (value is! String || value.trim().isEmpty)
+  if (value is! String || value.trim().isEmpty) {
     throw malformedResponse(
         step, 'required field "$key" must be a nonempty string');
+  }
   return value;
 }
 
 Map<String, dynamic> responseObject(Object? value, {required String step}) {
-  if (value is! Map<String, dynamic>)
+  if (value is! Map<String, dynamic>) {
     throw malformedResponse(step, 'expected an object in "data"');
+  }
   return value;
 }
 
 List<Map<String, dynamic>> responseList(Object? value, {required String step}) {
-  if (value is! List)
+  if (value is! List) {
     throw malformedResponse(step, 'expected a list in "data"');
+  }
   return value.map((entry) => responseObject(entry, step: step)).toList();
 }

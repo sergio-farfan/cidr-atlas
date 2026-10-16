@@ -254,6 +254,96 @@ tenancy=ocid1.tenancy.oc1..padded-default
   });
 
   test(
+      'accepts a section header followed by trailing text as ConfigParser does',
+      () async {
+    await config.writeAsString('[DEFAULT]\n'
+        'tenancy=ocid1.tenancy.oc1..fictional\n'
+        'region=us-ashburn-1\n'
+        '[PROD] # production tenancy\n'
+        'region=us-phoenix-1\n');
+    final profiles = await OciCliClient().profiles(configFile: config.path);
+    expect(profiles.map((profile) => profile.name), ['DEFAULT', 'PROD']);
+    expect(profiles.last.region, 'us-phoenix-1');
+    expect(profiles.last.tenancyId, 'ocid1.tenancy.oc1..fictional');
+  });
+
+  test('ignores indented continuation lines of credential options', () async {
+    await config.writeAsString('[DEFAULT]\n'
+        'tenancy=ocid1.tenancy.oc1..fictional\n'
+        'region=us-ashburn-1\n'
+        'key_file=/fictional/a\n'
+        '  continued\n'
+        '\n'
+        '\tFICTIONAL_SECRET continued after a blank line\n'
+        '[CHILD]\n'
+        'region=us-phoenix-1\n');
+    final profiles = await OciCliClient().profiles(configFile: config.path);
+    expect(profiles.map((profile) => profile.name), ['DEFAULT', 'CHILD']);
+    expect(profiles.first.region, 'us-ashburn-1');
+    expect(profiles.last.region, 'us-phoenix-1');
+  });
+
+  test('continuation of a retained option is appended as ConfigParser does',
+      () async {
+    await config.writeAsString(
+        '[DEFAULT]\ntenancy=ocid1.tenancy.oc1..fictional\nregion=us-\n  ashburn-1\n');
+    final profiles = await OciCliClient().profiles(configFile: config.path);
+    expect(profiles.single.region, 'us-\nashburn-1');
+    expect(profiles.single.tenancyId, 'ocid1.tenancy.oc1..fictional');
+  });
+
+  test('equally indented options are separate options, not continuations',
+      () async {
+    await config.writeAsString('[DEFAULT]\n'
+        '  tenancy=ocid1.tenancy.oc1..fictional\n'
+        '  region=us-phoenix-1\n'
+        '[NEXT]\n'
+        '    region=eu-frankfurt-1\n');
+    final profiles = await OciCliClient().profiles(configFile: config.path);
+    expect(profiles.first.tenancyId, 'ocid1.tenancy.oc1..fictional');
+    expect(profiles.first.region, 'us-phoenix-1');
+    expect(profiles.last.region, 'eu-frankfurt-1');
+  });
+
+  for (final text in [
+    '[DEFAULT]\n  continued\nregion=x',
+    '[A]\nregion=x\n[A] # duplicate',
+    // A valid section is open first, so only the empty header is at fault.
+    '[DEFAULT]\ntenancy=t\n[] trailing\nregion=x',
+  ]) {
+    test('continuation and header edge cases stay strict: ${text.length}',
+        () async {
+      await config.writeAsString(text);
+      await expectLater(OciCliClient().profiles(configFile: config.path),
+          throwsA(isA<OciException>()));
+    });
+  }
+
+  test('expands a home-relative explicit executable path', () async {
+    await writeConfig();
+    final connection = await OciCliClient(
+            environment: {'HOME': directory.path}, executableCandidates: [])
+        .connection(
+            profile: 'DEFAULT', configFile: config.path, executable: '~/oci');
+    expect(connection.executable, executable.path);
+  });
+
+  test('default candidates include the Oracle installer HOME/bin location',
+      () async {
+    await writeConfig();
+    final bin = Directory('${directory.path}/bin');
+    await bin.create();
+    final installed = await executable.copy('${bin.path}/oci');
+    if (!Platform.isWindows) {
+      await Process.run('/bin/chmod', ['700', installed.path]);
+    }
+    final connection = await OciCliClient(
+            environment: {'PATH': '/missing', 'HOME': directory.path})
+        .connection(profile: 'DEFAULT', configFile: config.path);
+    expect(connection.executable, installed.path);
+  });
+
+  test(
       'keeps interpolation-shaped metadata literal as OCI disables interpolation',
       () async {
     await config

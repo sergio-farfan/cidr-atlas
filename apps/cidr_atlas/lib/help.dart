@@ -162,7 +162,7 @@ class _AtlasHelpDialogState extends State<AtlasHelpDialog> {
       _paragraph(
         'OCI discovery reads existing CIDRs automatically. You choose the profile, '
         'region, compartment, and routing domain; you do not enter a prefix for '
-        'discovery. “0 prefixes” is the number returned for that scope.',
+        'discovery. “0 network CIDRs” is the number returned for that scope.',
       ),
       _heading('Choose the workflow'),
       _paragraph(
@@ -282,7 +282,7 @@ class _AtlasHelpDialogState extends State<AtlasHelpDialog> {
         'scope, collection interval, and warnings before treating gaps as '
         'candidates for allocation.',
       ),
-      _heading('If 0 prefixes are returned'),
+      _heading('If discovery finds no networks (0 network CIDRs)'),
       _paragraph(
         'There is nothing to apply. Check the profile/tenancy, resource regions, '
         'scope mode, and IAM permissions. With a selected direct compartment, '

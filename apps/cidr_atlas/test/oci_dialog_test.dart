@@ -4,129 +4,14 @@
 import 'dart:async';
 
 import 'package:cidr_atlas/dialogs.dart';
+import 'package:cidr_atlas/oci_dialog.dart';
 import 'package:cidr_data/cidr_data.dart';
 import 'package:cidr_core/cidr_core.dart';
 import 'package:cidr_oci/cidr_oci.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-const bundle =
-    '''{"metadata":{"tenancy":"ocid1.tenancy.oc1..fictional","region":"us-phoenix-1","collectedAt":"2026-10-15T20:00:00Z","coverage":"Fictional selected compartment only; omitted resources are retained."},"vcns":[{"id":"ocid1.vcn.oc1..fictional","display-name":"Fictional VCN","compartment-id":"ocid1.compartment.oc1..fictional","cidr-block":"10.64.0.0/16"}],"subnets":[]}''';
-
-class FakeOciInventoryClient implements OciInventoryClient {
-  int networkCalls = 0;
-  String? requestedConfig;
-  String? requestedExecutable;
-  OciAuthMode? requestedAuth;
-  String? requestedProfile;
-  String? requestedRegion;
-  List<String> requestedRegions = [];
-  bool requestedAllRegions = false;
-  bool requestedAllCompartments = false;
-  String? requestedCompartment;
-  OciCancellation? cancellation;
-  Completer<OciDiscovery>? pending;
-  Completer<List<OciRegion>>? pendingRegions;
-  OciException? scopeError;
-  OciException? discoveryError;
-  String json = bundle;
-
-  @override
-  Future<List<OciProfile>> profiles({String? configFile}) async {
-    requestedConfig = configFile;
-    return const [
-      OciProfile(
-        name: 'DEFAULT',
-        tenancyId: 'ocid1.tenancy.oc1..fictional',
-        region: 'us-phoenix-1',
-        authMode: OciAuthMode.apiKey,
-      ),
-      OciProfile(
-        name: 'SESSION',
-        tenancyId: 'ocid1.tenancy.oc1..session',
-        region: 'us-ashburn-1',
-        authMode: OciAuthMode.securityToken,
-      ),
-    ];
-  }
-
-  @override
-  Future<OciConnection> connection({
-    required String profile,
-    String? configFile,
-    String? executable,
-    OciAuthMode? authMode,
-  }) async {
-    requestedAuth = authMode;
-    requestedProfile = profile;
-    requestedConfig = configFile;
-    requestedExecutable = executable;
-    return OciConnection(
-      executable: executable ?? '/fictional/oci',
-      configFile: configFile ?? '/fictional/config',
-      profile: profile,
-      tenancyId: 'ocid1.tenancy.oc1..fictional',
-      authMode: authMode ?? OciAuthMode.apiKey,
-    );
-  }
-
-  @override
-  Future<List<OciRegion>> regions(
-    OciConnection connection, {
-    OciCancellation? cancellation,
-  }) async {
-    networkCalls++;
-    this.cancellation = cancellation;
-    if (pendingRegions != null) return pendingRegions!.future;
-    if (scopeError != null) throw scopeError!;
-    return const [
-      OciRegion(name: 'us-phoenix-1', status: 'READY'),
-      OciRegion(name: 'us-ashburn-1', status: 'IN_PROGRESS'),
-      OciRegion(name: 'eu-frankfurt-1', status: 'READY'),
-    ];
-  }
-
-  @override
-  Future<List<OciCompartment>> compartments(
-    OciConnection connection, {
-    required String region,
-    OciCancellation? cancellation,
-  }) async {
-    networkCalls++;
-    return const [
-      OciCompartment(
-        id: 'ocid1.compartment.oc1..fictional',
-        name: 'Fictional architecture compartment with a deliberately long display name',
-      ),
-    ];
-  }
-
-  @override
-  Future<OciDiscovery> discover(
-    OciConnection connection, {
-    List<String> regions = const [],
-    bool allRegions = false,
-    String? compartmentId,
-    bool allCompartments = false,
-    OciCancellation? cancellation,
-    void Function(String)? onProgress,
-  }) async {
-    networkCalls++;
-    this.cancellation = cancellation;
-    requestedRegions = regions;
-    requestedRegion = regions.firstOrNull;
-    requestedAllRegions = allRegions;
-    requestedAllCompartments = allCompartments;
-    requestedCompartment = compartmentId;
-    onProgress?.call('Reading selected VCNs');
-    if (pending != null) return pending!.future;
-    if (discoveryError != null) throw discoveryError!;
-    return OciDiscovery(
-      bundleJson: json,
-      warnings: const ['Fictional discovery warning'],
-    );
-  }
-}
+import 'fake_oci_client.dart';
 
 Future<void> openImport(
   WidgetTester tester,
@@ -909,5 +794,317 @@ void main() {
           .onPressed,
       isNull,
     );
+  });
+
+  Future<void> openDiscovery(
+    WidgetTester tester,
+    FakeOciInventoryClient client, {
+    OciInventoryClient Function({Duration? collectionTimeout})? factory,
+  }) async {
+    tester.view.physicalSize = const Size(1100, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showDialog<OciImportSelection>(
+                context: context,
+                builder: (_) =>
+                    OciDiscoveryDialog(client: client, clientFactory: factory),
+              ),
+              child: const Text('Open discovery'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open discovery'));
+    await tester.pumpAndSettle();
+  }
+
+  Finder compartmentSelector() => find.byWidgetPredicate(
+    (widget) =>
+        widget is DropdownButtonFormField<String> &&
+        widget.key.toString().contains('oci-compartment-selector-'),
+  );
+
+  testWidgets('Load scopes keeps manually typed regions and compartment', (
+    tester,
+  ) async {
+    final client = FakeOciInventoryClient();
+    await openImport(tester, client);
+    await tester.ensureVisible(find.text('Enter scope manually'));
+    await tester.tap(find.text('Enter scope manually'));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('oci-region')),
+      'eu-frankfurt-1, us-phoenix-1',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('oci-compartment')),
+      'ocid1.compartment.oc1..child',
+    );
+    await tester.ensureVisible(find.text('Load scopes'));
+    await tester.tap(find.text('Load scopes'));
+    await tester.pumpAndSettle();
+    expect(find.text('eu-frankfurt-1, us-phoenix-1'), findsOneWidget);
+    expect(find.text('ocid1.compartment.oc1..child'), findsOneWidget);
+    // Switching authentication within the profile keeps typed scope too.
+    await tester.ensureVisible(find.text('API key'));
+    await tester.tap(find.text('API key'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Security token').last);
+    await tester.pumpAndSettle();
+    expect(find.text('ocid1.compartment.oc1..child'), findsOneWidget);
+    await tester.enterText(find.byKey(const ValueKey('oci-domain')), 'corp');
+    await tester.ensureVisible(find.text('Discover inventory'));
+    await tester.tap(find.text('Discover inventory'));
+    await tester.pumpAndSettle();
+    expect(client.requestedRegions, ['eu-frankfurt-1', 'us-phoenix-1']);
+    expect(client.requestedCompartment, 'ocid1.compartment.oc1..child');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('same-named compartments show sorted paths and the OCID', (
+    tester,
+  ) async {
+    final client = FakeOciInventoryClient()
+      ..compartmentList = const [
+        OciCompartment(
+          id: 'ocid1.compartment.oc1..prodnet',
+          name: 'network',
+          parentId: 'ocid1.compartment.oc1..prod',
+          path: 'root / prod / network',
+        ),
+        OciCompartment(
+          id: 'ocid1.compartment.oc1..devnet',
+          name: 'network',
+          parentId: 'ocid1.compartment.oc1..dev',
+          path: 'root / dev / network',
+        ),
+      ];
+    await openDiscovery(tester, client);
+    await tester.tap(find.text('Load scopes'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Compartment OCID: ocid1.tenancy.oc1..fictional'),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(compartmentSelector());
+    await tester.tap(compartmentSelector());
+    await tester.pumpAndSettle();
+    final dev = tester.getTopLeft(find.text('root / dev / network').last);
+    final prod = tester.getTopLeft(find.text('root / prod / network').last);
+    expect(dev.dy, lessThan(prod.dy));
+    expect(find.text('network'), findsNothing);
+    await tester.tap(find.text('root / prod / network').last);
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Compartment OCID: ocid1.compartment.oc1..prodnet'),
+      findsOneWidget,
+    );
+    await tester.enterText(find.byKey(const ValueKey('oci-domain')), 'corp');
+    await tester.tap(find.text('Discover inventory'));
+    await tester.pumpAndSettle();
+    expect(client.requestedCompartment, 'ocid1.compartment.oc1..prodnet');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'the compartment OCID line follows the selector, not typed text',
+    (tester) async {
+      final client = FakeOciInventoryClient();
+      await openDiscovery(tester, client);
+      await tester.tap(find.text('Load scopes'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Compartment OCID: ocid1.tenancy.oc1..fictional'),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(find.text('Enter scope manually'));
+      await tester.tap(find.text('Enter scope manually'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('oci-compartment')),
+        'ocid1.compartment.oc1..typedbutunlisted',
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Use scope selectors'));
+      await tester.tap(find.text('Use scope selectors'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('oci-compartment-ocid')), findsNothing);
+      expect(
+        find.textContaining('ocid1.compartment.oc1..typedbutunlisted'),
+        findsNothing,
+      );
+      // Choosing a listed compartment shows its OCID again.
+      await tester.ensureVisible(compartmentSelector());
+      await tester.tap(compartmentSelector());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Tenancy root').last);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Compartment OCID: ocid1.tenancy.oc1..fictional'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  group('collection time limit', () {
+    Future<void> discoverWithLimit(WidgetTester tester, String limit) async {
+      await tester.tap(find.text('CLI and configuration paths'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('oci-collection-timeout')),
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('oci-collection-timeout')),
+        limit,
+      );
+      await manualScope(tester);
+      await tester.enterText(find.byKey(const ValueKey('oci-domain')), 'corp');
+      await tester.ensureVisible(find.text('Discover inventory'));
+      await tester.tap(find.text('Discover inventory'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('an entered limit creates the collection client with it', (
+      tester,
+    ) async {
+      final client = FakeOciInventoryClient();
+      final collector = FakeOciInventoryClient();
+      Duration? requested;
+      await openDiscovery(
+        tester,
+        client,
+        factory: ({Duration? collectionTimeout}) {
+          requested = collectionTimeout;
+          return collector;
+        },
+      );
+      await discoverWithLimit(tester, '45');
+      expect(requested, const Duration(minutes: 45));
+      expect(
+        collector.requestedCompartment,
+        'ocid1.compartment.oc1..fictional',
+      );
+      expect(client.requestedCompartment, isNull);
+      expect(find.text('Discover OCI inventory'), findsNothing);
+    });
+
+    testWidgets('a blank limit keeps the default client', (tester) async {
+      final client = FakeOciInventoryClient();
+      var created = false;
+      await openDiscovery(
+        tester,
+        client,
+        factory: ({Duration? collectionTimeout}) {
+          created = true;
+          return client;
+        },
+      );
+      await discoverWithLimit(tester, '');
+      expect(created, isFalse);
+      expect(client.requestedCompartment, 'ocid1.compartment.oc1..fictional');
+    });
+
+    testWidgets('an injected client without a factory is still bounded', (
+      tester,
+    ) async {
+      final client = FakeOciInventoryClient()
+        ..pending = Completer<OciDiscovery>();
+      await openDiscovery(tester, client);
+      await tester.tap(find.text('CLI and configuration paths'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('oci-collection-timeout')),
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('oci-collection-timeout')),
+        '2',
+      );
+      await manualScope(tester);
+      await tester.enterText(find.byKey(const ValueKey('oci-domain')), 'corp');
+      await tester.ensureVisible(find.text('Discover inventory'));
+      await tester.tap(find.text('Discover inventory'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(client.requestedCompartment, 'ocid1.compartment.oc1..fictional');
+      expect(client.cancellation?.isCancelled, isFalse);
+      await tester.pump(const Duration(minutes: 2));
+      await tester.pumpAndSettle();
+      expect(client.cancellation?.isCancelled, isTrue);
+      expect(
+        find.textContaining('did not finish within the 2-minute collection'),
+        findsOneWidget,
+      );
+      // The dialog stays open for a retry with nothing returned.
+      expect(find.text('Discover OCI inventory'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a discovery that finishes in time leaves no limit pending', (
+      tester,
+    ) async {
+      final client = FakeOciInventoryClient();
+      await openDiscovery(tester, client);
+      await discoverWithLimit(tester, '5');
+      expect(client.requestedCompartment, 'ocid1.compartment.oc1..fictional');
+      expect(find.text('Discover OCI inventory'), findsNothing);
+      // No limit timer survives the closed dialog to report a late error;
+      // the test binding also fails on a timer left pending.
+      await tester.pump(const Duration(minutes: 6));
+      expect(find.textContaining('did not finish within'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    for (final invalid in ['0', '1441', 'soon']) {
+      testWidgets('limit "$invalid" is rejected before collection', (
+        tester,
+      ) async {
+        final client = FakeOciInventoryClient();
+        var created = false;
+        await openDiscovery(
+          tester,
+          client,
+          factory: ({Duration? collectionTimeout}) {
+            created = true;
+            return client;
+          },
+        );
+        await discoverWithLimit(tester, invalid);
+        expect(created, isFalse);
+        expect(client.networkCalls, 0);
+        expect(
+          find.textContaining('Enter whole minutes from 1 to 1440'),
+          findsWidgets,
+        );
+        expect(find.text('Discover OCI inventory'), findsOneWidget);
+      });
+    }
+  });
+
+  testWidgets('OCI errors are announced and the tenancy OCID is labeled', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    final client = FakeOciInventoryClient()
+      ..scopeError = const OciException('Access denied. Enter scope manually.');
+    await openDiscovery(tester, client);
+    expect(
+      tester.getSemantics(find.text('ocid1.tenancy.oc1..fictional')).label,
+      contains('Tenancy OCID'),
+    );
+    await tester.tap(find.text('Load scopes'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSemantics(find.text('Access denied. Enter scope manually.')),
+      isSemantics(isLiveRegion: true),
+    );
+    semantics.dispose();
   });
 }

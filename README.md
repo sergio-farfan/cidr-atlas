@@ -15,7 +15,7 @@ files. Both paths provide a preview before an atomic local import. See
 ## Development workspace
 
 Clone the private [source repository](https://github.com/sergio-farfan/cidr-atlas)
-to `~/projects/cidr-atlas` on your Mac and open the folder in your development
+to `~/projects/git/cidr-atlas` on your Mac and open the folder in your development
 environment. `AGENTS.md` defines project conventions, `PROJECT.md` records
 implementation status and verification, and `docs/` contains the architecture
 and API contracts.
@@ -307,7 +307,7 @@ dart run bin/cidrctl.dart --help
 `scripts/cidrctl` runs the source CLI from any directory. Build a standalone
 executable on your target operating system with `scripts/build_cli.sh`.
 
-Run these examples from the project root (`~/projects/cidr-atlas`). They keep
+Run these examples from the project root (`~/projects/git/cidr-atlas`). They keep
 the example database and backup in `~/tmp` inside your home directory. Keep
 live-discovery databases and exports in a protected directory, not a shared one
 such as `/tmp`.

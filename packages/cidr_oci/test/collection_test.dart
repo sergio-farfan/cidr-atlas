@@ -208,6 +208,126 @@ void main() {
     expect(jsonDecode(result.bundleJson)['vcns'], isEmpty);
   });
 
+  for (final output in ['', ' \n\t']) {
+    test(
+        'successful empty CLI list output is an empty scoped observation: ${output.isEmpty ? "empty" : "whitespace"}',
+        () async {
+      final client = OciCliClient(
+          runner: (_) async => OciCommandResult(exitCode: 0, stdout: output));
+      final discovery = await client.discover(connection,
+          region: 'us-phoenix-1', compartmentId: tenancy);
+      final bundle = jsonDecode(discovery.bundleJson);
+      expect(bundle['vcns'], isEmpty);
+      expect(bundle['subnets'], isEmpty);
+      expect(
+          discovery.warnings.join(' '),
+          allOf(contains('No VCNs or subnets'), contains('directly'),
+              contains('child compartment')));
+      expect(
+          bundle['metadata']['coverage'], contains('not evidence of deletion'));
+    });
+  }
+
+  test('empty VCN list still collects subnets and required VCN context',
+      () async {
+    final client = OciCliClient(runner: (command) async {
+      final args = suffix(command);
+      if (args[2] == 'get') return jsonResult(externalVcn);
+      if (args[1] == 'vcn')
+        return const OciCommandResult(exitCode: 0, stdout: '');
+      return jsonResult([externalSubnet]);
+    });
+    final discovery = await client.discover(connection,
+        region: 'us-phoenix-1', compartmentId: compartment);
+    final bundle = jsonDecode(discovery.bundleJson);
+    expect(bundle['vcns'], [externalVcn]);
+    expect(bundle['subnets'], [externalSubnet]);
+    expect(discovery.warnings.join(' '), isNot(contains('No VCNs or subnets')));
+  });
+
+  test(
+      'empty subscription and compartment CLI lists preserve valid empty selectors',
+      () async {
+    final client = OciCliClient(
+        runner: (_) async => const OciCommandResult(exitCode: 0, stdout: ''));
+    expect(await client.regions(connection), isEmpty);
+    final scopes =
+        await client.compartments(connection, region: 'us-phoenix-1');
+    expect(scopes.map((scope) => scope.id), [tenancy]);
+  });
+
+  test('empty successful context is malformed with a safe operation and type',
+      () async {
+    final client = OciCliClient(runner: (command) async {
+      final args = suffix(command);
+      if (args[2] == 'get')
+        return const OciCommandResult(exitCode: 0, stdout: '');
+      return jsonResult(args[1] == 'vcn' ? [] : [externalSubnet]);
+    });
+    await expectLater(
+        client.discover(connection,
+            region: 'us-phoenix-1', compartmentId: compartment),
+        throwsA(isA<OciException>().having(
+            (error) => error.message,
+            'safe operation and expected response type',
+            allOf(contains('referenced VCN lookup'), contains('JSON object'),
+                contains('empty'), isNot(contains('vcn-context'))))));
+  });
+
+  test(
+      'malformed subnet fields identify operation and field without exposing values',
+      () async {
+    final client = OciCliClient(
+        runner: (command) async => jsonResult(suffix(command)[1] == 'vcn'
+            ? [vcn]
+            : [
+                {
+                  ...subnet,
+                  'vcn-id': {'FICTIONAL_SECRET': 'FICTIONAL_SECRET'}
+                }
+              ]));
+    await expectLater(
+        client.discover(connection,
+            region: 'us-phoenix-1', compartmentId: compartment),
+        throwsA(isA<OciException>().having(
+            (error) => error.message,
+            'safe operation and expected field type',
+            allOf(
+                contains('subnet list'),
+                contains('vcn-id'),
+                contains('string'),
+                isNot(contains('FICTIONAL_SECRET')),
+                isNot(contains('subnet-selected'))))));
+  });
+
+  test(
+      'malformed list envelope identifies expected type without exposing output',
+      () async {
+    final client = OciCliClient(
+        runner: (_) async => const OciCommandResult(
+            exitCode: 0, stdout: '{"data":"FICTIONAL_SECRET"}'));
+    await expectLater(
+        client.discover(connection,
+            region: 'us-phoenix-1', compartmentId: compartment),
+        throwsA(isA<OciException>().having(
+            (error) => error.message,
+            'safe operation and expected list type',
+            allOf(contains('VCN list'), contains('data'), contains('list'),
+                isNot(contains('FICTIONAL_SECRET'))))));
+  });
+
+  test('empty failed list is never treated as a successful empty observation',
+      () async {
+    final client = OciCliClient(
+        runner: (_) async => const OciCommandResult(
+            exitCode: 1, stdout: '', stderr: 'FICTIONAL_SECRET'));
+    await expectLater(
+        client.discover(connection,
+            region: 'us-phoenix-1', compartmentId: compartment),
+        throwsA(isA<OciException>().having((error) => error.message,
+            'failure is safe', isNot(contains('FICTIONAL_SECRET')))));
+  });
+
   test(
       'deduplicates external VCN context without enumerating its other subnets',
       () async {

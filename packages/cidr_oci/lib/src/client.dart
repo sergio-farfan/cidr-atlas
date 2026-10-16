@@ -102,13 +102,20 @@ class OciCliClient implements OciInventoryClient {
           connection.tenancyId,
           '--all'
         ],
-        cancellation: cancellation);
-    return List.unmodifiable(responseList(response).map((entry) {
+        cancellation: cancellation,
+        step: 'region subscription list',
+        listResponse: true);
+    return List.unmodifiable(
+        responseList(response, step: 'region subscription list').map((entry) {
       final isHome = entry['is-home-region'];
-      if (isHome != null && isHome is! bool) throw malformedResponse();
+      if (isHome != null && isHome is! bool)
+        throw malformedResponse('region subscription list',
+            'field "is-home-region" must be a boolean');
       return OciRegion(
-          name: requiredString(entry, 'region-name'),
-          status: requiredString(entry, 'status'),
+          name: requiredString(entry, 'region-name',
+              step: 'region subscription list'),
+          status:
+              requiredString(entry, 'status', step: 'region subscription list'),
           isHome: isHome == true);
     }));
   }
@@ -133,15 +140,17 @@ class OciCliClient implements OciInventoryClient {
           'ACTIVE',
           '--all'
         ],
-        cancellation: cancellation);
+        cancellation: cancellation,
+        step: 'compartment list',
+        listResponse: true);
     final scopes = <String, OciCompartment>{
       connection.tenancyId: OciCompartment(
           id: connection.tenancyId,
           name: 'Tenancy root (${connection.tenancyId})')
     };
-    for (final entry in responseList(response)) {
-      final id = requiredString(entry, 'id');
-      final name = requiredString(entry, 'name');
+    for (final entry in responseList(response, step: 'compartment list')) {
+      final id = requiredString(entry, 'id', step: 'compartment list');
+      final name = requiredString(entry, 'name', step: 'compartment list');
       scopes.putIfAbsent(id, () => OciCompartment(id: id, name: name));
     }
     return List.unmodifiable(scopes.values);
@@ -171,33 +180,47 @@ class OciCliClient implements OciInventoryClient {
     final contextFailures = <String>[];
     try {
       onProgress?.call('Loading selected-compartment VCNs');
-      final vcns = responseList(await _commands.request(
-          connection,
-          region,
-          [
-            'network',
-            'vcn',
-            'list',
-            '--compartment-id',
-            compartmentId,
-            '--all'
-          ],
-          cancellation: scopedCancellation));
-      _validateResources(vcns, compartmentId: compartmentId);
+      final vcns = responseList(
+          await _commands.request(
+              connection,
+              region,
+              [
+                'network',
+                'vcn',
+                'list',
+                '--compartment-id',
+                compartmentId,
+                '--all'
+              ],
+              cancellation: scopedCancellation,
+              step: 'VCN list',
+              listResponse: true),
+          step: 'VCN list');
+      _validateResources(vcns, compartmentId: compartmentId, step: 'VCN list');
       onProgress?.call('Loading selected-compartment subnets');
-      final subnets = responseList(await _commands.request(
-          connection,
-          region,
-          [
-            'network',
-            'subnet',
-            'list',
-            '--compartment-id',
-            compartmentId,
-            '--all'
-          ],
-          cancellation: scopedCancellation));
-      _validateResources(subnets, compartmentId: compartmentId, subnets: true);
+      final subnets = responseList(
+          await _commands.request(
+              connection,
+              region,
+              [
+                'network',
+                'subnet',
+                'list',
+                '--compartment-id',
+                compartmentId,
+                '--all'
+              ],
+              cancellation: scopedCancellation,
+              step: 'subnet list',
+              listResponse: true),
+          step: 'subnet list');
+      _validateResources(subnets,
+          compartmentId: compartmentId, subnets: true, step: 'subnet list');
+      if (vcns.isEmpty && subnets.isEmpty) {
+        warnings.add(
+            'No VCNs or subnets were returned for the selected compartment and region. '
+            'Discovery includes resources directly in that compartment; choose a child compartment to discover its resources.');
+      }
       final known = vcns.map((entry) => entry['id'] as String).toSet();
       final missing = subnets
           .map((entry) => entry['vcn-id'] as String)
@@ -207,11 +230,16 @@ class OciCliClient implements OciInventoryClient {
         checkCancellation(scopedCancellation);
         onProgress?.call('Loading referenced VCN context');
         try {
-          final context = responseObject(await _commands.request(
-              connection, region, ['network', 'vcn', 'get', '--vcn-id', id],
-              cancellation: scopedCancellation));
-          _validateResources([context]);
-          if (context['id'] != id) throw malformedResponse();
+          final context = responseObject(
+              await _commands.request(
+                  connection, region, ['network', 'vcn', 'get', '--vcn-id', id],
+                  cancellation: scopedCancellation,
+                  step: 'referenced VCN lookup'),
+              step: 'referenced VCN lookup');
+          _validateResources([context], step: 'referenced VCN lookup');
+          if (context['id'] != id)
+            throw malformedResponse('referenced VCN lookup',
+                'field "id" did not match the requested resource');
           vcns.add(context);
           contextSuccesses.add(id);
           final contextCompartment = context['compartment-id'];
@@ -258,14 +286,18 @@ class OciCliClient implements OciInventoryClient {
   }
 
   void _validateResources(List<Map<String, dynamic>> resources,
-      {String? compartmentId, bool subnets = false}) {
+      {String? compartmentId, bool subnets = false, required String step}) {
     final ids = <String>{};
     for (final resource in resources) {
-      if (!ids.add(requiredString(resource, 'id'))) throw malformedResponse();
-      final actualCompartment = requiredString(resource, 'compartment-id');
+      if (!ids.add(requiredString(resource, 'id', step: step)))
+        throw malformedResponse(
+            step, 'field "id" must be unique within the response');
+      final actualCompartment =
+          requiredString(resource, 'compartment-id', step: step);
       if (compartmentId != null && actualCompartment != compartmentId)
-        throw malformedResponse();
-      if (subnets) requiredString(resource, 'vcn-id');
+        throw malformedResponse(
+            step, 'field "compartment-id" did not match the selected scope');
+      if (subnets) requiredString(resource, 'vcn-id', step: step);
     }
   }
 }

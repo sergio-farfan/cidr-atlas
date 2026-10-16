@@ -17,7 +17,9 @@ class OciCommands {
 
   Future<Object?> request(
       OciConnection connection, String region, List<String> suffix,
-      {OciCancellation? cancellation}) async {
+      {OciCancellation? cancellation,
+      required String step,
+      bool listResponse = false}) async {
     checkCancellation(cancellation);
     if ([
       connection.executable,
@@ -92,14 +94,23 @@ class OciCommands {
       if (local.isCancelled) throw const OciException('OCI request timed out.');
       final result = response as OciCommandResult;
       if (result.exitCode != 0) throw _failure(result);
+      if (result.stdout.trim().isEmpty) {
+        // OCI CLI omits output for successful empty lists. Object lookups
+        // still require their JSON envelope and must never become empty lists.
+        if (listResponse) return <Object?>[];
+        throw malformedResponse(
+            step, 'expected a JSON object, but CLI output was empty');
+      }
       final Object? decoded;
       try {
         decoded = jsonDecode(result.stdout);
       } on FormatException {
-        throw malformedResponse();
+        throw malformedResponse(step, 'CLI output was not valid JSON');
       }
-      if (decoded is! Map<String, dynamic> || !decoded.containsKey('data'))
-        throw malformedResponse();
+      if (decoded is! Map<String, dynamic>)
+        throw malformedResponse(step, 'expected a JSON object envelope');
+      if (!decoded.containsKey('data'))
+        throw malformedResponse(step, 'required field "data" was missing');
       return decoded['data'];
     } catch (error) {
       local.cancel();
@@ -168,21 +179,26 @@ void checkCancellation(OciCancellation? cancellation) {
     throw const OciException('OCI request cancelled.');
 }
 
-OciException malformedResponse() => const OciException(
-    'Malformed OCI response. Retry discovery after checking the CLI version and selected scope.');
+OciException malformedResponse(String step, String detail) => OciException(
+    'Malformed OCI response during $step: $detail. Check the CLI version and retry the selected scope.');
 
-String requiredString(Map<String, dynamic> object, String key) {
+String requiredString(Map<String, dynamic> object, String key,
+    {required String step}) {
   final value = object[key];
-  if (value is! String || value.trim().isEmpty) throw malformedResponse();
+  if (value is! String || value.trim().isEmpty)
+    throw malformedResponse(
+        step, 'required field "$key" must be a nonempty string');
   return value;
 }
 
-Map<String, dynamic> responseObject(Object? value) {
-  if (value is! Map<String, dynamic>) throw malformedResponse();
+Map<String, dynamic> responseObject(Object? value, {required String step}) {
+  if (value is! Map<String, dynamic>)
+    throw malformedResponse(step, 'expected an object in "data"');
   return value;
 }
 
-List<Map<String, dynamic>> responseList(Object? value) {
-  if (value is! List) throw malformedResponse();
-  return value.map(responseObject).toList();
+List<Map<String, dynamic>> responseList(Object? value, {required String step}) {
+  if (value is! List)
+    throw malformedResponse(step, 'expected a list in "data"');
+  return value.map((entry) => responseObject(entry, step: step)).toList();
 }

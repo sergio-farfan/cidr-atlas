@@ -581,6 +581,22 @@ void main() {
     final blank = await run([..._scope, '--db', ' ']);
     expect(blank.code, 2);
     expect(client.calls, 0);
+
+    final notSqlite = File('${temporary.path}/notes.sqlite')
+      ..writeAsStringSync('this is not a SQLite database file');
+    for (final apply in [false, true]) {
+      final result = await run([
+        ..._scope,
+        '--db',
+        notSqlite.path,
+        if (apply) '--apply',
+      ]);
+      expect(result.code, 1, reason: result.error);
+      expect(result.error, contains('notes.sqlite'));
+      expect(result.error, contains('cannot be opened'));
+      expect(client.calls, 0);
+    }
+    expect(notSqlite.readAsStringSync(), 'this is not a SQLite database file');
   });
 
   test('--apply with a read-only database fails before contacting OCI',

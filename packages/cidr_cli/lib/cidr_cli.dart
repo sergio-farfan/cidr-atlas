@@ -237,6 +237,14 @@ void _checkDatabaseLocation(String path, {required bool write}) {
   }
   if (type != FileSystemEntityType.notFound) {
     if (write) File(path).openSync(mode: FileMode.append).closeSync();
+    // Opening an existing inventory reads its schema version without writing,
+    // so a non-SQLite or newer-schema file fails before any OCI request.
+    try {
+      InventoryStore.open(path).close();
+    } on Object {
+      throw FileSystemException(
+          'The file cannot be opened as a CIDR Atlas inventory', path);
+    }
     return;
   }
   var ancestor = File(path).absolute.parent;

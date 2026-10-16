@@ -98,16 +98,27 @@ String exportTarget(String destination) {
 /// dangling link, otherwise its nearest existing ancestor directory.
 String canonicalPath(String path) {
   final file = File(path).absolute;
-  if (file.existsSync()) return file.resolveSymbolicLinksSync();
+  // typeSync follows links and also finds directories, such as `sub/..`.
+  if (FileSystemEntity.typeSync(file.path) != FileSystemEntityType.notFound) {
+    return file.resolveSymbolicLinksSync();
+  }
   if (FileSystemEntity.isLinkSync(file.path)) {
     // A dangling link: an export writes its eventual target.
     return canonicalPath(exportTarget(file.path));
   }
-  final name = file.uri.pathSegments.isEmpty ? '' : file.uri.pathSegments.last;
+  final separator = Platform.pathSeparator;
+  final segments =
+      file.path.split(separator).where((segment) => segment.isNotEmpty);
+  final name = segments.isEmpty ? '' : segments.last;
+  if (name == '.' || name == '..') {
+    // A missing directory followed by `..` cannot be resolved by the file
+    // system; collapse it lexically so the comparison errs towards refusal.
+    final normalized = Uri.file(file.path).normalizePath().toFilePath();
+    return normalized == file.path ? file.path : canonicalPath(normalized);
+  }
   final parent = file.parent;
   if (parent.path == file.path) return file.path;
   final resolvedParent = canonicalPath(parent.path);
-  final separator = Platform.pathSeparator;
   return resolvedParent.endsWith(separator)
       ? '$resolvedParent$name'
       : '$resolvedParent$separator$name';

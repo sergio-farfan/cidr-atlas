@@ -106,6 +106,22 @@ void main() {
       expect(snapshot().records.single.id, 'example-pool');
     });
 
+    test('refuses companion files reached through a dot-dot segment', () {
+      seed([_pool]);
+      Directory('${temporary.path}/sub').createSync(recursive: true);
+      for (final directory in ['sub', 'missing']) {
+        for (final suffix in ['-wal', '-shm', '-journal']) {
+          final destination =
+              '${temporary.path}/$directory/../inventory.sqlite$suffix';
+          final result = run(['export', '--file', destination]);
+          expect(result.code, 2, reason: destination);
+          expect(File('$database$suffix').existsSync(), isFalse,
+              reason: destination);
+        }
+      }
+      expect(snapshot().records.single.id, 'example-pool');
+    });
+
     test('refuses a symbolic link to the database', () {
       seed([_pool]);
       final link = Link('${temporary.path}/alias.sqlite')..createSync(database);

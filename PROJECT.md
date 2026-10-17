@@ -229,14 +229,24 @@ requests or local inventory writes were performed during native QA.
 
 ## Release status
 
-The private [v0.3.0 preview release](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.3.0)
-is published with its universal DMG and checksum. Both uploaded asset sizes and
-SHA-256 digests match the verified local artifacts; private repository visibility
-and the unchanged v0.2.1 DMG were rechecked. Tag `v0.3.0` identifies source commit
-`e2318076b56536565834a7f480764b1d5f6f85be`. The DMG is
-21,157,660 bytes; SHA-256 is
-`91090df278ce252f05db2119464fb4efac20eb5d23a590463ed433458b078cc7`.
-The checksum-file SHA-256 is
+[CIDR Atlas 0.4.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.4.0)
+was published on 2026-10-16 as the first regular (non-prerelease) release, so
+`releases/latest` and the stable `CIDR-Atlas.dmg` download link now resolve to it.
+Annotated tag `v0.4.0` identifies source commit
+`549be3213a5e20411851e9e7a8f5ab0e1b8c04a8`, whose CI run (38986557230) passed.
+The assets were built from a clean checkout of that commit:
+`CIDR-Atlas-0.4.0.dmg` and the identical `CIDR-Atlas.dmg` are 21,330,963 bytes,
+SHA-256 `be77151e3651fde834b0f9e8d3e3305d32be5b01d34935f61e85acd027413265`; the
+checksum file `CIDR-Atlas-0.4.0.dmg.sha256` has SHA-256
+`a4cbe9ed12c58b340754a70907d914c0284c718f811cd94559469c06554ce278`. The downloaded
+release assets were byte-identical to the local artifacts, the checksum file
+verified, and GitHub's asset digests match. The repository remains private.
+
+The previous preview, [v0.3.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.3.0),
+remains published as a prerelease. Tag `v0.3.0` identifies source commit
+`e2318076b56536565834a7f480764b1d5f6f85be`; its DMG is 21,157,660 bytes, SHA-256
+`91090df278ce252f05db2119464fb4efac20eb5d23a590463ed433458b078cc7`, and its
+checksum-file SHA-256 is
 `0fc42df546b22afdb49c4c56065cbda91ca36763ff6433f3a37f0e567be0ef5a`.
 
 The prior published preview is [v0.2.1](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.1).
@@ -263,8 +273,8 @@ data and CLI) are lower than the lockfiles resolve (>=3.11.0); raising them to
 
 ## Next actions
 
-Check Clear inventory and the all-compartments retry in the native 0.4.0 build, then publish 0.4.0 following
-[docs/releasing.md](docs/releasing.md). Decisions recorded in the remediation plan:
+Check Clear inventory and the all-compartments retry in the published 0.4.0
+build; both are covered by widget tests only. Decisions recorded in the remediation plan:
 
 - All-compartments mode: continue past a compartment that denies network listing
   and record it as unobserved coverage, instead of failing the whole collection

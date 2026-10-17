@@ -8,13 +8,13 @@ Sergio Farfan is the sole author of project-owned code and documentation. Use pr
 
 ## Product and user intent
 
-Build a local-first CIDR inventory and allocation tool for an enterprise OCI infrastructure architect. Deliver macOS first, then iOS, then Windows and Linux. Desktop platforms also need a CLI. The agreed architecture is Flutter UI, a pure Dart domain engine, and SQLite; do not switch to a website, Python service, or Swift-only implementation without discussing the tradeoff.
+Build a local-first CIDR inventory and allocation tool for an enterprise OCI infrastructure architect. Deliver macOS; Windows and Linux graphical releases are later milestones. iOS is dropped for now: the shared engine stays portable Dart, but no iOS app, iOS platform directory, or iOS-specific behavior is built or planned until that decision is revisited. Desktop platforms also need a CLI. The agreed architecture is Flutter UI, a pure Dart domain engine, and SQLite; do not switch to a website, Python service, or Swift-only implementation without discussing the tradeoff.
 
 Read `docs/CONTRACT.md`, `docs/architecture.md`, and `PROJECT.md` for contracts, scope, and current implementation status.
 
 ## Layout
 
-- `apps/cidr_atlas`: Flutter application; macOS is the first supported GUI target.
+- `apps/cidr_atlas`: Flutter application; macOS is the only supported GUI target.
 - `packages/cidr_core`: CIDR arithmetic, domain model, conflict and allocation rules. Must not import Flutter.
 - `packages/cidr_data`: SQLite storage, atomic imports, exports, and history. Must not import Flutter.
 - `packages/cidr_cli`: command-line frontend using the same core/data packages.

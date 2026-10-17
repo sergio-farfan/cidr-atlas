@@ -34,9 +34,9 @@ flowchart TD
 | `apps/cidr_atlas` | Flutter desktop navigation, inventory editing and review, file import/export |
 
 The core, data, and OCI packages have no Flutter dependency. Core calculations
-apply equally to the macOS app, a future iOS app, and standalone desktop CLIs. The
-data package separates observed OCI inventory from local planning metadata when
-reconciling imports. The OCI adapter has no database dependency and cannot write
+apply equally to the macOS app and standalone desktop CLIs, and would apply to
+any future graphical target. The data package separates observed OCI inventory
+from local planning metadata when reconciling imports. The OCI adapter has no database dependency and cannot write
 inventory; both clients pass its bundle through the existing data import path.
 
 ## Address identity and hierarchy
@@ -288,15 +288,16 @@ New installations start empty. Optional fictional sample records carry source
 `demo`, are only added to an empty database, and can be removed together in one
 transaction.
 
-Mac desktop code is the first graphical target. The shared Dart packages prepare
-for iOS, Windows, and Linux. Platform menus, navigation, permissions, file pickers,
+Mac desktop code is the only graphical target. The shared Dart packages keep
+Windows and Linux reachable; iOS was dropped on 2026-10-17 and the project has no
+iOS platform directory. Platform menus, navigation, permissions, file pickers,
 and release artifacts still require per-platform implementation and verification.
-macOS build/signing and iOS builds require Apple tooling on a Mac.
+macOS build and signing require Apple tooling on a Mac.
 
 A future team service should coordinate reservations transactionally through an
 API. It should keep one allocation authority and explicit access controls rather
 than synchronize live SQLite files. Read-only desktop collectors can publish
-inventory bundles or observations to a future service without making the iOS app
+inventory bundles or observations to a future service without making every client
 depend on an OCI CLI installation or desktop-held credentials.
 
 ## macOS artifacts

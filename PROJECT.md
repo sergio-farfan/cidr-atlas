@@ -6,8 +6,9 @@ Author: Sergio Farfan <sergio.farfan@gmail.com>
 
 Local-first CIDR inventory and allocation planning for cloud/network administrators.
 The macOS Flutter app and desktop CLI share pure Dart network rules, OCI discovery,
-and a local SQLite inventory. Offline CSV/JSON imports remain available. iOS,
-Windows and Linux graphical releases and team synchronization are future work.
+and a local SQLite inventory. Offline CSV/JSON imports remain available. Windows
+and Linux graphical releases and team synchronization are future work. iOS was
+dropped on 2026-10-17: macOS is the only graphical target for now.
 New installations start empty; optional demo inventories are fictional.
 
 ## Current implementation
@@ -157,6 +158,13 @@ Toolchain: macOS 26.7.1 Apple Silicon, Xcode 27.0 (27A266a), Flutter 3.47.7,
 Dart 3.13.5, OCI CLI 3.94.1. Native dependencies use Swift Package Manager.
 Machine-specific SDK paths are not tracked.
 
+Re-verified on 2026-10-17 on a second Mac (macOS 27.0.1, Xcode 27.1 (27A9275),
+same Flutter 3.47.7 / Dart 3.13.5, OCI CLI 3.95.0): identical test counts in all
+five packages, clean formatting and analysis, and `scripts/build_macos.sh`
+produced a universal 0.4.0 app whose deep/strict signature verifies. The
+installed OCI CLI is now 3.95.0 while the behavior claims above remain pinned to
+3.94.1; re-verify them against that CLI's `--help` before relying on them.
+
 Unreleased remediation, verified 2026-10-16 on the working tree:
 
 - Core: 72 tests passed (v0.3.0: 50).
@@ -274,7 +282,18 @@ data and CLI) are lower than the lockfiles resolve (>=3.11.0); raising them to
 ## Next actions
 
 Check Clear inventory and the all-compartments retry in the published 0.4.0
-build; both are covered by widget tests only. Decisions recorded in the remediation plan:
+build; both are covered by widget tests only.
+
+Distribution through the personal Homebrew tap is planned in
+`docs/plans/2026-10-17-homebrew-publication.md`. It is gated on making the
+repository public, because a cask downloads its asset with plain curl and no
+GitHub credentials. The plan also records two measured constraints: `dart
+compile exe` cannot cross-compile to macOS x64, and `lipo` destroys a Dart AOT
+executable, so the disk image has to carry one `cidrctl` per architecture and
+the cask selects one with `on_arch_conditional`. Announcement copy for X is in
+`x-post.md`; the dev.to article is still an unpublished draft.
+
+Decisions recorded in the remediation plan:
 
 - All-compartments mode: continue past a compartment that denies network listing
   and record it as unobserved coverage, instead of failing the whole collection
@@ -283,8 +302,9 @@ build; both are covered by widget tests only. Decisions recorded in the remediat
   read-only commands refuse a nonexistent database instead of warning (#9);
   case-insensitive routing-domain identity (#45).
 - Release provenance (clean-tree check, source commit in the DMG; #56), a CI
-  workflow (#57), a platform gate for OCI discovery on iOS (#63), and blocker
-  attribution, per-status map patterns and planner view filters (#64).
+  workflow (#57), and blocker attribution, per-status map patterns and planner
+  view filters (#64). The platform gate for OCI discovery on iOS (#63) is
+  dropped with the iOS target.
 - Broad-mode collection strategy (bounded concurrency or a Search pre-filter)
   beyond the timeout option.
 - SDK floors and package version alignment (#53): raise the floors together with
@@ -294,10 +314,9 @@ build; both are covered by widget tests only. Decisions recorded in the remediat
   rather than replace (#1); a writability probe for an existing but unwritable
   database directory before collection (#37); lazy rendering of very large
   planner hierarchies (#5); an `Export all` widget test (#7); a process-level
-  SIGINT test for `discover` (#40); an iOS branch in `defaultDatabasePath` before
-  an iOS app uses it; a refresh-without-change that keeps planner results; a
-  repair path for inventories that already hold two copies of one OCID/CIDR under
-  different region spellings (such a refresh now stops with "Multiple existing
+  SIGINT test for `discover` (#40); a refresh-without-change that keeps planner
+  results; a repair path for inventories that already hold two copies of one
+  OCID/CIDR under different region spellings (such a refresh now stops with "Multiple existing
   records match"); one intermittent `cidr_oci` failure observed once in 13 full
   runs and not reproduced under load, so harden the real-process timing tests.
 - IPAM roadmap: prioritize from the Infoblox comparison in

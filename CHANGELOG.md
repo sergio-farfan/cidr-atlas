@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- iOS is dropped as a target for now. macOS stays the only graphical release; Windows and Linux remain later milestones, and the shared engine stays portable Dart. The project has no iOS platform directory, and the previously planned iOS items (a discovery platform gate and an iOS branch in `defaultDatabasePath`) are retired.
+
 ## [0.4.0] - 2026-10-16
 
 App 0.4.0 (build 5) and `cidrctl` 0.4.0. Inventories, JSON backups, CSV exports and the macOS database path from v0.3.0 remain compatible.

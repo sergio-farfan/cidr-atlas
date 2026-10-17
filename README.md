@@ -227,7 +227,7 @@ Unordered and undated:
   CIDR containment does not establish connectivity.
 - **Discovery resilience**: an opt-in mode that records denied compartments as
   unobserved instead of stopping the collection.
-- **Other platforms**: iOS, then Windows and Linux graphical releases.
+- **Other platforms**: Windows and Linux graphical releases. iOS is not planned.
 - **Optional signing upgrade**: Developer ID signing and notarization.
 
 ## Build from source
@@ -800,8 +800,9 @@ cd ../../apps/cidr_atlas && flutter pub get && flutter analyze && flutter test
 ```
 
 The commands above are individual development steps; run them from the indicated
-package directories. The shared engine and CLI are portable Dart. iOS, Windows,
-and Linux graphical releases and packaging remain future milestones.
+package directories. The shared engine and CLI are portable Dart. Windows and
+Linux graphical releases and packaging remain future milestones; iOS is not
+planned.
 
 See `docs/architecture.md` for component boundaries and
 `docs/CONTRACT.md` for the implementation API contract. Report security issues as

@@ -2,6 +2,16 @@
 
 Author: Sergio Farfan <sergio.farfan@gmail.com>
 
+## Before you start
+
+You can add records by hand with nothing installed, import a CSV, CIDR Atlas JSON
+backup or OCI JSON file offline, or discover networks live through your existing
+OCI CLI. Live discovery needs the OCI CLI (`brew install oci-cli`), a profile in
+`~/.oci/config` (`oci setup config` or `oci session authenticate`) and read-only
+`inspect` access to tenancies, compartments and `virtual-network-family`. The
+README's [Before you start](../README.md#before-you-start) section has the exact
+commands, IAM policy statements and file formats with examples.
+
 ## When do I enter a prefix?
 
 A prefix is a network range written as a CIDR, such as `10.64.0.0/24`. The

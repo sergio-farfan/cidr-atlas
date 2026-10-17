@@ -46,6 +46,120 @@ before replacing it. Upgrades keep the local inventory; new installations start 
 
 Prefer to build it yourself? See [Build from source](#build-from-source).
 
+## Before you start
+
+There are three ways to fill the inventory. Only live discovery needs anything
+installed.
+
+| Path | What you need |
+|------|---------------|
+| Add records by hand | Nothing. Start with an allocation such as `10.64.0.0/16`. |
+| Import a file | A CSV file, a CIDR Atlas JSON backup, or an OCI JSON file ([formats](#import-file-formats)). No OCI access. |
+| Discover from OCI | The OCI CLI, a working profile, and read-only IAM permissions ([setup](#oci-cli-setup)). |
+
+### OCI CLI setup
+
+CIDR Atlas runs your existing OCI CLI. It never stores credentials and never
+reads key or token files; it reads only the profile name, tenancy, region and
+whether the profile uses a session token.
+
+1. **Install the OCI CLI** with Homebrew, Oracle's documented macOS method
+   ([installation guide](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm)):
+
+   ```bash
+   brew update && brew install oci-cli
+   oci --version   # CIDR Atlas is validated against 3.94.1
+   ```
+
+   The app also finds `oci` in `~/bin`, `/opt/homebrew/bin` or `/usr/local/bin`,
+   or you can choose the executable in the dialog (`--oci-bin` in the CLI).
+
+2. **Create a profile** in `~/.oci/config`, either with an API key or a
+   browser session ([token-based authentication](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/clitoken.htm)):
+
+   ```bash
+   # API key: generates a key pair; upload the public key in the Console.
+   oci setup config
+
+   # Or a session token through the browser, then refresh it while it is valid.
+   oci session authenticate --region us-ashburn-1
+   oci session refresh --profile EXAMPLE --auth security_token
+   ```
+
+   Session tokens last one hour by default and can be refreshed up to 24 hours.
+   Choose **Security token** in the dialog, or `--auth security_token` in the
+   CLI, for a session profile.
+
+3. **Grant read-only access.** Every request CIDR Atlas makes needs only the
+   `inspect` verb ([core policy reference](https://docs.oracle.com/en-us/iaas/Content/Identity/Reference/corepolicyreference.htm),
+   [IAM policy reference](https://docs.oracle.com/en-us/iaas/Content/Identity/Reference/iampolicyreference.htm)):
+
+   ```text
+   Allow group NetworkViewers to inspect tenancies in tenancy
+   Allow group NetworkViewers to inspect compartments in tenancy
+   Allow group NetworkViewers to inspect virtual-network-family in tenancy
+   ```
+
+   | Statement | Used for | API operations |
+   |-----------|----------|----------------|
+   | `inspect tenancies` | **Load scopes** and all READY regions | `ListRegionSubscriptions` |
+   | `inspect compartments` | **Load scopes** and all accessible compartments | `ListCompartments` |
+   | `inspect virtual-network-family` | VCN and subnet collection | `ListVcns`, `GetVcn`, `ListSubnets` |
+
+   Scope the network statement to specific compartments if you prefer; discovery
+   then needs those compartments selected, and a compartment you can see but not
+   list networks in stops an all-compartments run. With manual scope entry
+   (typed regions and a compartment OCID) the first two statements are not
+   needed. `read` grants the same operations for these resources.
+
+4. **Discover**: **Import → Discover from OCI CLI**, choose the profile, **Load
+   scopes**, pick regions and compartments, enter a routing domain, and review the
+   preview before **Apply**. See [Live OCI inventory](#live-oci-inventory).
+
+### Import file formats
+
+Every import is previewed first and applied in one transaction; nothing is
+deleted because a file leaves it out. The `examples/` folder has fictional
+templates for each format.
+
+**CSV** — the first line is a header; columns can be in any order.
+`cidr`, `name` and `routingDomain` are required. `kind` is `allocation`, `vcn`
+or `subnet` (default `vcn`); `status` is `planned`, `reserved` (default),
+`active` or `retired`; `parentId` links a record to its parent's `id`. CIDRs must
+be canonical network prefixes (`10.64.1.0/24`, not `10.64.1.3/24`).
+
+```text
+id,cidr,name,routingDomain,kind,parentId
+example-pool,10.64.0.0/16,Corporate allocation,example-corporate,allocation,
+example-prod-vcn,10.64.0.0/20,Production VCN,example-corporate,vcn,example-pool
+example-prod-app,10.64.1.0/24,Application subnet,example-corporate,subnet,example-prod-vcn
+```
+
+All columns: `id,cidr,name,routingDomain,kind,status,customer,tenancy,region,compartment,environment,owner,resourceId,vcnId,parentId,notes,source,verifiedAt`
+(template: [`examples/fictional_inventory.csv`](examples/fictional_inventory.csv)).
+
+**CIDR Atlas JSON backup** — `{"format":"cidr-atlas","version":1,"records":[...]}`,
+as written by **Export → JSON** or `cidrctl export --format json`. Records keep
+their own routing domains.
+
+**OCI JSON** — import with a routing domain. Two shapes are accepted:
+
+- A bundle with `metadata` (tenancy, region, `collectedAt`), `vcns` and
+  `subnets`, like [`examples/fictional_oci_bundle.json`](examples/fictional_oci_bundle.json).
+  This is the preferred file format because it records tenancy, region and
+  observation time.
+- Raw OCI CLI list output (`{"data":[...]}`), saved with `--all` so every page is
+  included. Import the VCN and subnet files separately; tenancy, region and
+  observation time are then unknown and the preview says so.
+
+  ```bash
+  oci network vcn list --compartment-id ocid1.compartment.oc1..example --all > vcns.json
+  oci network subnet list --compartment-id ocid1.compartment.oc1..example --all > subnets.json
+  ```
+
+Field-level rules (partial-column updates, timestamps, aliases and merge
+behavior) are in [Imports and backup](#imports-and-backup).
+
 ## Why CIDR Atlas?
 
 **Routing domains, not tenancies, decide conflicts.** Networks joined by a DRG, VPN,

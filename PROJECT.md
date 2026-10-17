@@ -193,7 +193,8 @@ app left the original database unchanged. The new dialogs (centred progress pane
 Clear inventory, all-compartments retry) are covered by widget tests; hands-on
 native checks of them are outstanding. The appearance setting was checked by the
 operator in the native build on 2026-10-16: Light, Dark and System switch from the
-Settings menu item and the choice is kept after relaunch.
+Settings menu item and the choice is kept after relaunch. The centred discovery
+progress panel was also confirmed during a live discovery.
 
 v0.3.0 release verification (the last published release):
 
@@ -262,8 +263,7 @@ data and CLI) are lower than the lockfiles resolve (>=3.11.0); raising them to
 
 ## Next actions
 
-Check the centred progress panel, Clear inventory and the all-compartments retry
-in the native 0.4.0 build, then publish 0.4.0 following
+Check Clear inventory and the all-compartments retry in the native 0.4.0 build, then publish 0.4.0 following
 [docs/releasing.md](docs/releasing.md). Decisions recorded in the remediation plan:
 
 - All-compartments mode: continue past a compartment that denies network listing

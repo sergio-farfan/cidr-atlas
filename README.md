@@ -20,16 +20,18 @@ routing domains, and recommends free space with exact IPv4/IPv6 arithmetic. The
 Flutter app and the `cidrctl` CLI share the same pure Dart rules and the same local
 SQLite inventory.
 
-> **0.4.0 is prepared and not yet published.** The latest published preview is
-> [0.3.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.3.0). See the
-> [CHANGELOG](CHANGELOG.md) for what 0.4.0 adds and [PROJECT.md](PROJECT.md) for
-> completed and outstanding verification.
+> **[0.4.0 is the latest release](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.4.0)**,
+> published October 16, 2026. It adds safer imports and exports, OCI region
+> canonicalization, retries and collection limits, a centered discovery progress
+> panel, Clear inventory, and a System/Light/Dark appearance setting. See the
+> [CHANGELOG](CHANGELOG.md) for details and [PROJECT.md](PROJECT.md) for completed
+> and outstanding verification.
 
 ## Download
 
-Releases are on the private repository's
-[releases page](https://github.com/sergio-farfan/cidr-atlas/releases); repository
-access is required to download the assets. Each release provides a universal disk
+**[Download CIDR-Atlas.dmg →](https://github.com/sergio-farfan/cidr-atlas/releases/latest/download/CIDR-Atlas.dmg)**
+(direct download; or browse the [latest release](https://github.com/sergio-farfan/cidr-atlas/releases/latest)).
+While the repository is private, downloading requires repository access. Each release provides a universal disk
 image for Apple silicon and Intel and its SHA-256 checksum. From 0.4.0 the assets are
 named `CIDR-Atlas-X.Y.Z.dmg` and `CIDR-Atlas-X.Y.Z.dmg.sha256`, plus an identical
 stable-name `CIDR-Atlas.dmg`; 0.1.0 to 0.3.0 use `CIDR-Atlas-X.Y.Z-macos-universal.dmg`.
@@ -208,7 +210,7 @@ Full details per release are in the [CHANGELOG](CHANGELOG.md); disk images are o
 
 | Version | Date | Highlights |
 |---------|------|------------|
-| 0.4.0 | Prepared, unpublished | Review remediation, safer imports and exports, region canonicalization, OCI retries and collection limits, centered discovery progress, Clear inventory |
+| [0.4.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.4.0) | 2026-10-16 | Review remediation, safer imports and exports, region canonicalization, OCI retries and collection limits, centered discovery progress, Clear inventory, appearance setting |
 | [0.3.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.3.0) | 2026-10-15 | Multi-region and all-compartment discovery, compact planner layout |
 | [0.2.1](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.1) | 2026-10-15 | Offline help, guidance and fictional examples |
 | [0.2.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.0) | 2026-10-15 | Visual address planner and CIDR inspector |

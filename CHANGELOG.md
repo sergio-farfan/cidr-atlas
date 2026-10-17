@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Prepared as 0.4.0 (app 0.4.0+5, `cidrctl` 0.4.0) and not yet published. This section becomes the 0.4.0 entry at publication. Inventories, JSON backups, CSV exports and the macOS database path from v0.3.0 remain compatible.
+## [0.4.0] - 2026-10-16
+
+App 0.4.0 (build 5) and `cidrctl` 0.4.0. Inventories, JSON backups, CSV exports and the macOS database path from v0.3.0 remain compatible.
 
 ### Added
 
@@ -67,6 +69,8 @@ Prepared as 0.4.0 (app 0.4.0+5, `cidrctl` 0.4.0) and not yet published. This sec
 
 - Consistent lint configuration in every package (`package:lints/recommended.yaml`, `flutter_lints` for the app), missing file headers added, `scripts/cidrctl` dependency freshness, DMG staging under `build/`, unused app dependencies removed and examples moved to `~/tmp`.
 - `docs/CONTRACT.md`, `docs/architecture.md`, `README.md`, `docs/user-guide.md` and `PROJECT.md` synced with the remediation, the new options and the clear command. Added the remediation plan and an Infoblox IPAM feature assessment. The README points at the `~/projects/git/cidr-atlas` checkout location.
+- MIT license, changelog, contributing and security policies, issue and pull request templates, CI, and the local release procedure. Release disk images are named `CIDR-Atlas-X.Y.Z.dmg` with a stable-name `CIDR-Atlas.dmg` copy.
+- A "Before you start" guide covering the OCI CLI installation, API-key and session-token profiles, the read-only IAM policy statements, and the CSV, JSON backup and OCI JSON import formats with examples.
 
 ## [0.3.0] - 2026-10-15
 
@@ -147,7 +151,8 @@ Prepared as 0.4.0 (app 0.4.0+5, `cidrctl` 0.4.0) and not yet published. This sec
 - The universal DMG (arm64 and x86_64) mounted and passed content, signature-integrity, architecture and checksum checks. Runtime smoke checks ran on Apple Silicon.
 - Ad hoc signature, without Developer ID or notarization. Live OCI profile validity and IAM permissions were not verified against an account.
 
-[Unreleased]: https://github.com/sergio-farfan/cidr-atlas/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/sergio-farfan/cidr-atlas/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.4.0
 [0.3.0]: https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.3.0
 [0.2.1]: https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.1
 [0.2.0]: https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.0

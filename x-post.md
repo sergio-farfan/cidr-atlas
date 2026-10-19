@@ -54,9 +54,8 @@ Write-up: <dev.to article URL>
 
 ## Notes
 
-- Avoid the word "IPAM". `docs/design/2026-10-16-ipam-feature-assessment.md`
-  places the current feature set at Tier 1 against Infoblox NIOS, so the term
-  invites a comparison the product does not yet win.
+- Avoid the word "IPAM" and comparisons with commercial IPAM products; describe
+  CIDR Atlas as a CIDR inventory and allocation planner.
 - Claim only what a release actually ships. The app is ad hoc signed and not
   notarized, so "no cloud" and "local-first" are safe claims while "signed" is
   not.

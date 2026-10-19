@@ -259,8 +259,7 @@ Full details per release are in the [CHANGELOG](CHANGELOG.md); disk images are o
 
 Unordered and undated:
 
-- **IPAM planning features** from the [Infoblox comparison](docs/design/2026-10-16-ipam-feature-assessment.md):
-  a `cidrctl conflicts` gate, `recommend --count/--exclude`, OCI rule checks and OKE
+- **More planning features**: a `cidrctl conflicts` gate, `recommend --count/--exclude`, OCI rule checks and OKE
   CIDR checks first.
 - **Observed connectivity**: routes, gateways, DRGs and peering as a separate model;
   CIDR containment does not establish connectivity.

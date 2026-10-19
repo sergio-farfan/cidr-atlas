@@ -319,9 +319,9 @@ Decisions recorded in the remediation plan:
   OCID/CIDR under different region spellings (such a refresh now stops with "Multiple existing
   records match"); one intermittent `cidr_oci` failure observed once in 13 full
   runs and not reproduced under load, so harden the real-process timing tests.
-- IPAM roadmap: prioritize from the Infoblox comparison in
-  `docs/design/2026-10-16-ipam-feature-assessment.md` (Tier 1 items need no record
-  model change).
+- Planning roadmap: a `cidrctl conflicts` gate, `recommend --count/--exclude`,
+  OCI rule checks and OKE CIDR checks first; none of them needs a record model
+  change.
 
 Scope the observed connectivity collector and topology model while retaining
 address inventory and allocation as the main workflows. Wider distribution

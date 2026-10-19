@@ -83,7 +83,7 @@ App 0.4.0 (build 5) and `cidrctl` 0.4.0. Inventories, JSON backups, CSV exports 
 ### Documentation
 
 - Consistent lint configuration in every package (`package:lints/recommended.yaml`, `flutter_lints` for the app), missing file headers added, `scripts/cidrctl` dependency freshness, DMG staging under `build/`, unused app dependencies removed and examples moved to `~/tmp`.
-- `docs/CONTRACT.md`, `docs/architecture.md`, `README.md`, `docs/user-guide.md` and `PROJECT.md` synced with the remediation, the new options and the clear command. Added the remediation plan and an Infoblox IPAM feature assessment. The README points at the `~/projects/git/cidr-atlas` checkout location.
+- `docs/CONTRACT.md`, `docs/architecture.md`, `README.md`, `docs/user-guide.md` and `PROJECT.md` synced with the remediation, the new options and the clear command. Added the remediation plan. The README points at the `~/projects/git/cidr-atlas` checkout location.
 - MIT license, changelog, contributing and security policies, issue and pull request templates, CI, and the local release procedure. Release disk images are named `CIDR-Atlas-X.Y.Z.dmg` with a stable-name `CIDR-Atlas.dmg` copy.
 - A "Before you start" guide covering the OCI CLI installation, API-key and session-token profiles, the read-only IAM policy statements, and the CSV, JSON backup and OCI JSON import formats with examples.
 

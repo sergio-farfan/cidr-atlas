@@ -14,6 +14,10 @@ Author: Sergio Farfan <sergio.farfan@gmail.com>
 
 **Local-first CIDR inventory and allocation planning for OCI networks, with a macOS app and a desktop CLI.**
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="CIDR Atlas address inventory dashboard" width="800">
+</p>
+
 An enterprise OCI estate spreads VCNs and subnets across regions, compartments and
 connected networks, and the question "is this range free?" usually means checking a
 spreadsheet, the console and somebody's memory. CIDR Atlas keeps one local register of

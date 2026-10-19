@@ -119,16 +119,22 @@ Make a clean build, then package:
 ```sh
 (cd apps/cidr_atlas && flutter clean)   # or "$FLUTTER_BIN" clean
 scripts/build_macos.sh
-scripts/build_cli.sh
+DART_X64_BIN=/path/to/x64/dart-sdk/bin/dart scripts/build_cli.sh --both
 scripts/build_dmg.sh --skip-build
 ```
 
-`build_macos.sh` builds the universal (arm64 and x86_64) release app;
-`build_cli.sh` builds `build/cidrctl` for the current Mac. `build_dmg.sh` (without
-`--skip-build` it runs `build_macos.sh` first) verifies both architectures and the
+`build_macos.sh` builds the universal (arm64 and x86_64) release app.
+`build_cli.sh --both` builds `build/cidrctl-arm64` with the Flutter-bundled Dart and
+`build/cidrctl-x86_64` with an x64 macOS Dart SDK of the **same version** under
+Rosetta (`DART_X64_BIN`); it refuses mismatched or missing SDKs and never installs
+one. There is no universal `cidrctl`: `dart compile exe` cannot cross-compile to
+macOS x64, and `lipo -create` breaks a Dart AOT executable. `build_dmg.sh` (without
+`--skip-build` it runs `build_macos.sh` and `build_cli.sh --both` first) verifies both architectures and the
 deep/strict signature of the app, creates the disk image, verifies the image,
 mounts it read-only and checks its contents, architectures, version and
-signature again, then writes into `build/releases/`:
+signature again, checks that each `cidrctl` is executable, has the expected single
+architecture, a valid signature and reports the app's version (the Intel one under
+Rosetta), then writes into `build/releases/`:
 
 - `CIDR-Atlas-X.Y.Z.dmg`
 - `CIDR-Atlas-X.Y.Z.dmg.sha256` (checked with `shasum -a 256 -c`)
@@ -136,7 +142,7 @@ signature again, then writes into `build/releases/`:
 
 The version in the file names comes from the built app's
 `CFBundleShortVersionString`, so a mismatch with the intended version shows here.
-Check `build/cidrctl --version` as well. Record any native checks of new UI
+Record any native checks of new UI
 (launching the app, the changed dialogs) and the checks not performed.
 
 ## 4. Record the release
@@ -257,3 +263,28 @@ gh api repos/sergio-farfan/cidr-atlas/releases/latest --jq .tag_name
 Confirm that `/releases/latest/download/CIDR-Atlas.dmg` downloads without signing
 in (`curl -sL -o /dev/null -w '%{http_code} %{size_download}\n' <url>`). Finally, record the source
 commit, sizes and digests in `PROJECT.md` and commit that update.
+
+## 8. Update the Homebrew cask
+
+The cask `sergio-farfan/tap/cidr-atlas` follows regular releases only: its
+`livecheck` uses the GitHub Latest release, so never dispatch a prerelease. After
+the published release is verified, ask the tap to bump the cask; its `bump.yml`
+runs `brew bump-cask-pr`, validates the tap (audit, install, uninstall) and pushes:
+
+```sh
+VERSION=X.Y.Z
+SHA="$(cut -d' ' -f1 "build/releases/CIDR-Atlas-$VERSION.dmg.sha256")"
+jq -n --arg v "$VERSION" --arg s "$SHA" \
+  '{event_type: "cidr-atlas-release",
+    client_payload: {cask: "cidr-atlas", version: $v, sha256: $s}}' \
+  | gh api repos/sergio-farfan/homebrew-tap/dispatches --input -
+```
+
+Follow the run under the tap's Actions tab, then check for drift:
+
+```sh
+brew update && brew livecheck --cask sergio-farfan/tap/cidr-atlas
+```
+
+The bump rewrites only `version` and `sha256`. A release that changes the payload
+(a new file in the disk image, a renamed app) needs a hand-written tap commit.

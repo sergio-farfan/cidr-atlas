@@ -9,7 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Prepared as 0.4.1 (app 0.4.1+6, `cidrctl` 0.4.1).
+
+### Added
+
+- Homebrew install channel: `brew install --cask sergio-farfan/tap/cidr-atlas` installs the app and links `cidrctl` for the Mac's architecture; `--zap` removes the preferences and keeps the inventory.
+- The disk image carries `cidrctl-arm64` and `cidrctl-x86_64`, one per architecture, with installation steps in `INSTALL.txt`. `scripts/build_cli.sh --both` builds them (the Intel one with a matching x64 Dart SDK under Rosetta), and `build_dmg.sh` checks each one's architecture, signature and version.
+
 ### Changed
+
+- The repository is public: version and download badges, private vulnerability reporting through GitHub Security Advisories, and the macOS app CI job runs on pull requests.
 
 - iOS is dropped as a target for now. macOS stays the only graphical release; Windows and Linux remain later milestones, and the shared engine stays portable Dart. The project has no iOS platform directory, and the previously planned iOS items (a discovery platform gate and an iOS branch in `defaultDatabasePath`) are retired.
 

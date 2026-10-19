@@ -31,6 +31,29 @@ SQLite inventory.
 
 ## Download
 
+### Option 1 — Homebrew (recommended)
+
+```bash
+brew install --cask sergio-farfan/tap/cidr-atlas
+```
+
+This installs **CIDR Atlas** in Applications and links the `cidrctl` command for your
+Mac's architecture. Homebrew ≥ 6 asks you to trust the tap the first time
+(`brew trust sergio-farfan/tap`). CIDR Atlas is ad-hoc signed (not notarized), so macOS
+blocks the first launch: allow it once under **System Settings → Privacy & Security →
+Open Anyway**, or clear the quarantine flag:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/CIDR Atlas.app"
+```
+
+Expect that prompt again after every `brew upgrade`: ad-hoc builds get a new code identity
+each release, so macOS cannot carry the approval over until releases are notarized. Update
+with `brew upgrade --cask cidr-atlas`. `brew uninstall --cask --zap cidr-atlas` also removes
+the preferences but keeps your inventory (see [Uninstall](#uninstall)).
+
+### Option 2 — Download the disk image
+
 **[Download CIDR-Atlas.dmg →](https://github.com/sergio-farfan/cidr-atlas/releases/latest/download/CIDR-Atlas.dmg)**
 (direct download; or browse the [latest release](https://github.com/sergio-farfan/cidr-atlas/releases/latest)).
 Each release provides a universal disk
@@ -40,6 +63,9 @@ stable-name `CIDR-Atlas.dmg`; 0.1.0 to 0.3.0 use `CIDR-Atlas-X.Y.Z-macos-univers
 
 Open the disk image and drag **CIDR Atlas** to **Applications**. Quit a running copy
 before replacing it. Upgrades keep the local inventory; new installations start empty.
+From 0.4.1 the image also contains `cidrctl-arm64` (Apple silicon) and
+`cidrctl-x86_64` (Intel); its `INSTALL.txt` explains how to put the right one on your
+`PATH` as `cidrctl`.
 
 <!-- UNSIGNED-NOTE: remove this block once notarized builds ship. -->
 > CIDR Atlas releases are **ad-hoc signed and not notarized**. After verifying the
@@ -812,7 +838,17 @@ described in [SECURITY.md](SECURITY.md).
 
 ## Uninstall
 
-Quit the app, then remove it and, only if you no longer need it, the local inventory.
+With Homebrew:
+
+```bash
+brew uninstall --cask --zap cidr-atlas
+```
+
+This removes the app, the `cidrctl` link and the app's preferences, and deliberately keeps
+the inventory in `~/Library/Application Support/cidr_atlas`, which the app and `cidrctl`
+share. Deleting it is the separate, optional step below.
+
+For a manual install, quit the app, then remove it and, only if you no longer need it, the local inventory.
 The appearance preference is not part of the inventory; it lives in the app's user
 defaults (domain `dev.cidratlas.desktop`):
 

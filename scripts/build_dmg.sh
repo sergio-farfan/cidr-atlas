@@ -16,6 +16,7 @@ if [[ $# -gt 1 || ( $# -eq 1 && "$1" != "--skip-build" ) ]]; then
 fi
 if [[ $# -eq 0 ]]; then
   "$project_root/scripts/build_macos.sh"
+  "$project_root/scripts/build_cli.sh" --both
 fi
 
 app_path="$project_root/apps/cidr_atlas/build/macos/Build/Products/Release/CIDR Atlas.app"
@@ -32,6 +33,32 @@ for architecture in arm64 x86_64; do
   /usr/bin/lipo "$app_path/Contents/MacOS/CIDR Atlas" -verify_arch "$architecture"
 done
 /usr/bin/codesign --verify --deep --strict "$app_path"
+
+# One cidrctl per architecture: a Dart AOT executable cannot be made universal
+# with lipo. Both must report the app's version.
+cli_names=(cidrctl-arm64 cidrctl-x86_64)
+cli_archs=(arm64 x86_64)
+rosetta=false
+if /usr/bin/arch -x86_64 /usr/bin/true 2>/dev/null; then rosetta=true; fi
+verify_cli() {
+  local path="$1" architecture="$2"
+  test -x "$path"
+  test "$(/usr/bin/lipo -archs "$path")" = "$architecture"
+  /usr/bin/codesign --verify --strict "$path"
+  if [[ "$architecture" == "$(uname -m)" || ( "$architecture" == x86_64 && "$rosetta" == true ) ]]; then
+    test "$(/usr/bin/arch "-$architecture" "$path" --version)" = "cidrctl $version"
+  else
+    echo "Note: cannot run $path on this Mac; its --version was not checked." >&2
+  fi
+}
+for i in 0 1; do
+  cli_path="$project_root/build/${cli_names[$i]}"
+  if [[ ! -f "$cli_path" ]]; then
+    echo "${cli_names[$i]} missing. Run scripts/build_cli.sh --both first." >&2
+    exit 1
+  fi
+  verify_cli "$cli_path" "${cli_archs[$i]}"
+done
 
 release_dir="$project_root/build/releases"
 mkdir -p "$release_dir"
@@ -53,6 +80,9 @@ mkdir "$staging_dir/content" "$staging_dir/mounted"
 ln -s /Applications "$staging_dir/content/Applications"
 cp "$project_root/THIRD_PARTY_NOTICES.md" "$staging_dir/content/THIRD_PARTY_NOTICES.md"
 cp "$project_root/third_party/FLUTTER_LICENSE" "$staging_dir/content/FLUTTER_LICENSE"
+for name in "${cli_names[@]}"; do
+  /usr/bin/ditto "$project_root/build/$name" "$staging_dir/content/$name"
+done
 cat > "$staging_dir/content/INSTALL.txt" <<'INSTALL'
 CIDR Atlas
 Author: Sergio Farfan <sergio.farfan@gmail.com>
@@ -61,6 +91,17 @@ Drag CIDR Atlas.app to Applications, then eject this disk image.
 New installations start with an empty inventory. Upgrades retain local records.
 Offline CSV/JSON imports are available from Import. Live OCI discovery requires
 an existing OCI CLI installation and profile, plus explicit scope selection.
+
+The command-line tool is included twice, one copy per processor: cidrctl-arm64
+for Apple silicon and cidrctl-x86_64 for Intel. Copy the one for your Mac to a
+folder on your PATH, rename it cidrctl, and clear the download quarantine:
+
+  install -m 755 /Volumes/CIDR\ Atlas*/cidrctl-arm64 ~/bin/cidrctl
+  xattr -d com.apple.quarantine ~/bin/cidrctl 2>/dev/null || true
+
+Homebrew installs the app and the matching cidrctl in one step:
+
+  brew install --cask sergio-farfan/tap/cidr-atlas
 
 This preview release uses an ad hoc signature. It has no Developer ID signature
 or Apple notarization ticket; macOS may require explicit approval to open it.
@@ -83,6 +124,9 @@ for architecture in arm64 x86_64; do
   /usr/bin/lipo "$mounted_app/Contents/MacOS/CIDR Atlas" -verify_arch "$architecture"
 done
 /usr/bin/codesign --verify --deep --strict "$mounted_app"
+for i in 0 1; do
+  verify_cli "$staging_dir/mounted/${cli_names[$i]}" "${cli_archs[$i]}"
+done
 /usr/bin/hdiutil detach "$staging_dir/mounted"
 mounted=false
 (

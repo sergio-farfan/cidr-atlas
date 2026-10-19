@@ -286,13 +286,11 @@ data and CLI) are lower than the lockfiles resolve (>=3.11.0); raising them to
 Check Clear inventory and the all-compartments retry in the published 0.4.0
 build; both are covered by widget tests only.
 
-Distribution through the personal Homebrew tap is planned in
-`docs/plans/2026-10-17-homebrew-publication.md`. It is gated on making the
-repository public, because a cask downloads its asset with plain curl and no
-GitHub credentials. The plan also records two measured constraints: `dart
-compile exe` cannot cross-compile to macOS x64, and `lipo` destroys a Dart AOT
-executable, so the disk image has to carry one `cidrctl` per architecture and
-the cask selects one with `on_arch_conditional`. Announcement copy for X is in
+Homebrew distribution (`docs/plans/2026-10-17-homebrew-publication.md`): the
+repository was made public on 2026-10-19, and 0.4.1 is prepared with both
+per-architecture `cidrctl` executables in the disk image. The cask and the tap
+wiring are drafted in the local tap clone and are pushed only after the 0.4.1
+release, built with an x64 Dart SDK matching 3.13.5, is published and verified. Announcement copy for X is in
 `x-post.md`; the dev.to article is still an unpublished draft.
 
 Decisions recorded in the remediation plan:

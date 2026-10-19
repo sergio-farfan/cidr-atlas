@@ -4,7 +4,7 @@
 name: cidr_atlas
 description: Local-first OCI network address planning for macOS.
 publish_to: none
-version: 0.4.0+5
+version: 0.4.1+6
 environment:
   sdk: '>=3.13.0 <4.0.0'
   flutter: '>=3.47.0'

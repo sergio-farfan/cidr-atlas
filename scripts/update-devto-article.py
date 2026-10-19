@@ -5,8 +5,13 @@
 """Publish dev-to-article.md to dev.to.
 
 Usage:
-    DEVTO_API_KEY=xxxx python3 scripts/update-devto-article.py --create [--publish]
-    DEVTO_API_KEY=xxxx DEVTO_ARTICLE_ID=1234567 python3 scripts/update-devto-article.py
+    python3 scripts/update-devto-article.py                      # update the article
+    python3 scripts/update-devto-article.py --create [--publish]  # first publication
+
+The API key is read from DEVTO_API_KEY or, when that is not set, from the macOS
+Keychain item "devto-api-key". Store it once with:
+    security add-generic-password -U -s devto-api-key -a "$USER" -w
+(-w with no value prompts for the key, so it never appears in shell history).
 
 --create posts a new article with the title, tags and description below, as an
 unpublished draft unless --publish is given; then record its article id in
@@ -22,6 +27,7 @@ rejects default Python user agents, hence the browser-like User-Agent.
 
 import json
 import os
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -54,10 +60,29 @@ def request(method, url, payload, api_key):
         sys.exit(f"HTTP {error.code}: {error.read().decode()[:500]}")
 
 
+KEYCHAIN_SERVICE = "devto-api-key"
+PLACEHOLDERS = {"xxxx", "your-key", "new_key", "new-key", "your-dev.to-key", "your-new-key"}
+
+
+def api_key_from_environment_or_keychain():
+    key = os.environ.get("DEVTO_API_KEY", "").strip()
+    if key:
+        if key.lower() in PLACEHOLDERS:
+            sys.exit(f"DEVTO_API_KEY is the placeholder '{key}', not a real key. "
+                     "Generate one at https://dev.to/settings/extensions.")
+        return key
+    if sys.platform == "darwin":
+        result = subprocess.run(
+            ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
+            capture_output=True, text=True, check=False)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    sys.exit("No dev.to API key. Set DEVTO_API_KEY or store it in the Keychain with:\n"
+             f'  security add-generic-password -U -s {KEYCHAIN_SERVICE} -a "$USER" -w')
+
+
 def main():
-    api_key = os.environ.get("DEVTO_API_KEY")
-    if not api_key:
-        sys.exit("DEVTO_API_KEY is not set. See the usage at the top of this script.")
+    api_key = api_key_from_environment_or_keychain()
     with open(ARTICLE_SOURCE, encoding="utf-8") as source:
         body = source.read()
 

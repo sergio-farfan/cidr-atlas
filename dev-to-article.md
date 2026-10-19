@@ -14,6 +14,8 @@ So I built **CIDR Atlas**: a local-first CIDR inventory and allocation planner f
 >
 > Want to try it? **[Download CIDR-Atlas.dmg →](https://github.com/sergio-farfan/cidr-atlas/releases/latest/download/CIDR-Atlas.dmg)**, open it, and drag CIDR Atlas to Applications.
 
+![CIDR Atlas address inventory dashboard](https://raw.githubusercontent.com/sergio-farfan/cidr-atlas/d129ef3f3514648877f0f2144a43adcea7d5f763/docs/screenshot.png)
+
 ---
 
 ## Features

@@ -5,12 +5,12 @@
 """Publish dev-to-article.md to dev.to.
 
 Usage:
-    DEVTO_API_KEY=xxxx python3 scripts/update-devto-article.py --create
+    DEVTO_API_KEY=xxxx python3 scripts/update-devto-article.py --create [--publish]
     DEVTO_API_KEY=xxxx DEVTO_ARTICLE_ID=1234567 python3 scripts/update-devto-article.py
 
---create posts a new unpublished draft with the title, tags and description
-below; finish the cover image and publish it in the dev.to editor, then record
-its article id in ARTICLE_ID (or pass DEVTO_ARTICLE_ID). Without --create the
+--create posts a new article with the title, tags and description below, as an
+unpublished draft unless --publish is given; then record its article id in
+ARTICLE_ID (or pass DEVTO_ARTICLE_ID). Without --create the
 script updates the existing article's body only, so the title, tags, cover
 image and description set in the editor are preserved.
 
@@ -69,14 +69,15 @@ def main():
                 "article": {
                     "title": TITLE,
                     "body_markdown": body,
-                    "published": False,
+                    "published": "--publish" in sys.argv[1:],
                     "tags": TAGS,
                     "description": DESCRIPTION,
                 }
             },
             api_key,
         )
-        print(f"Draft created: id {result['id']} — finish and publish it at https://dev.to/dashboard")
+        state = "Published" if result.get("published") else "Draft created"
+        print(f"{state}: id {result['id']} {result.get('url', '')}")
         return
 
     article_id = os.environ.get("DEVTO_ARTICLE_ID") or ARTICLE_ID

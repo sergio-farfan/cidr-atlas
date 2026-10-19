@@ -3,6 +3,8 @@
 # Author: Sergio Farfan <sergio.farfan@gmail.com>
 
 .dart_tool/
+__pycache__/
+*.pyc
 .packages
 .flutter-plugins
 .flutter-plugins-dependencies

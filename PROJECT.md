@@ -311,7 +311,9 @@ repository was made public on 2026-10-19, and 0.4.1 is prepared with both
 per-architecture `cidrctl` executables in the disk image. The cask and the tap
 wiring are drafted in the local tap clone and are pushed only after the 0.4.1
 release, built with an x64 Dart SDK matching 3.13.5, is published and verified. Announcement copy for X is in
-`x-post.md`; the dev.to article is still an unpublished draft.
+`x-post.md`. The dev.to article was published on 2026-10-19 as
+https://dev.to/sergio_farfn_b071cafc7ed/cidr-atlas-a-local-first-cidr-planner-for-oci-networks-4hke
+(article id 4878857, recorded in `scripts/update-devto-article.py`).
 
 Decisions recorded in the remediation plan:
 

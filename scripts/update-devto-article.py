@@ -26,7 +26,7 @@ import sys
 import urllib.error
 import urllib.request
 
-ARTICLE_ID = None  # Set after the first publication.
+ARTICLE_ID = 4878857  # Published 2026-10-19.
 ARTICLE_SOURCE = os.path.join(os.path.dirname(__file__), "..", "dev-to-article.md")
 TITLE = "CIDR Atlas: a local-first CIDR planner for OCI networks"
 TAGS = "oci, flutter, dart, networking"  # comma-separated, up to four
@@ -76,7 +76,7 @@ def main():
             },
             api_key,
         )
-        state = "Published" if result.get("published") else "Draft created"
+        state = "Published" if result.get("published_at") else "Draft created"
         print(f"{state}: id {result['id']} {result.get('url', '')}")
         return
 

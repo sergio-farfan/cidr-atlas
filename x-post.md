@@ -8,9 +8,9 @@ Announcement copy for X. The voice follows `dev-to-article.md`: the problem
 first, in the first person, then what was built, then plain claims without
 superlatives. Every variant below is within the 280-character limit.
 
-Post the single version or the thread, not both. Links resolve only after the
-repository is public and the dev.to article is published; until then post
-without them or hold the announcement.
+Post the single version or the thread, not both. The repository is public and
+the dev.to article is published at https://dev.to/sergio_farfn_b071cafc7ed/cidr-atlas-a-local-first-cidr-planner-for-oci-networks-4hke; a link counts as 23 characters on X, so
+a single post that adds the article link must stay within 257 characters of text.
 
 ## Single post — recommended (268 characters)
 
@@ -50,7 +50,7 @@ float shortcuts.
 inventory. Flutter + pure Dart + SQLite, MIT.
 
 Download: https://github.com/sergio-farfan/cidr-atlas/releases/latest/download/CIDR-Atlas.dmg
-Write-up: <dev.to article URL>
+Write-up: https://dev.to/sergio_farfn_b071cafc7ed/cidr-atlas-a-local-first-cidr-planner-for-oci-networks-4hke
 
 ## Notes
 

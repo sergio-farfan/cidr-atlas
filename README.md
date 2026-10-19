@@ -26,12 +26,13 @@ routing domains, and recommends free space with exact IPv4/IPv6 arithmetic. The
 Flutter app and the `cidrctl` CLI share the same pure Dart rules and the same local
 SQLite inventory.
 
-> **[0.4.0 is the latest release](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.4.0)**,
-> published October 16, 2026. It adds safer imports and exports, OCI region
-> canonicalization, retries and collection limits, a centered discovery progress
-> panel, Clear inventory, and a System/Light/Dark appearance setting. See the
-> [CHANGELOG](CHANGELOG.md) for details and [PROJECT.md](PROJECT.md) for completed
-> and outstanding verification.
+> **[0.4.1 is the latest release](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.4.1)**,
+> published October 19, 2026. It adds the Homebrew install channel and ships the
+> `cidrctl` CLI in the disk image for both Apple silicon and Intel. The app is the
+> same as [0.4.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.4.0),
+> which added safer imports and exports, OCI region canonicalization, retries and
+> collection limits, a centered discovery progress panel, Clear inventory, and a
+> System/Light/Dark appearance setting. See the [CHANGELOG](CHANGELOG.md) for details.
 
 ## Download
 
@@ -247,6 +248,7 @@ Full details per release are in the [CHANGELOG](CHANGELOG.md); disk images are o
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| [0.4.1](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.4.1) | 2026-10-19 | Homebrew cask; `cidrctl` for Apple silicon and Intel in the disk image |
 | [0.4.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.4.0) | 2026-10-16 | Review remediation, safer imports and exports, region canonicalization, OCI retries and collection limits, centered discovery progress, Clear inventory, appearance setting |
 | [0.3.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.3.0) | 2026-10-15 | Multi-region and all-compartment discovery, compact planner layout |
 | [0.2.1](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.1) | 2026-10-15 | Offline help, guidance and fictional examples |

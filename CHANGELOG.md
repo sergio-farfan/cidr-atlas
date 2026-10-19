@@ -9,7 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Prepared as 0.4.1 (app 0.4.1+6, `cidrctl` 0.4.1).
+## [0.4.1] - 2026-10-19
+
+App 0.4.1 (build 6) and `cidrctl` 0.4.1. The application is unchanged from 0.4.0 apart from its version; the disk image now carries the CLI.
 
 ### Added
 
@@ -164,7 +166,8 @@ App 0.4.0 (build 5) and `cidrctl` 0.4.0. Inventories, JSON backups, CSV exports 
 - The universal DMG (arm64 and x86_64) mounted and passed content, signature-integrity, architecture and checksum checks. Runtime smoke checks ran on Apple Silicon.
 - Ad hoc signature, without Developer ID or notarization. Live OCI profile validity and IAM permissions were not verified against an account.
 
-[Unreleased]: https://github.com/sergio-farfan/cidr-atlas/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/sergio-farfan/cidr-atlas/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.4.1
 [0.4.0]: https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.4.0
 [0.3.0]: https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.3.0
 [0.2.1]: https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.2.1

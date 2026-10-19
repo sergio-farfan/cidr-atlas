@@ -235,6 +235,11 @@ CLI profile, with read-only requests.
 - **`cidrctl` CLI** for list, check, reserve, recommend, import, discover, export,
   history and clear, with stable exit codes for scripting.
 
+<p align="center">
+  <img src="docs/screenshot-conflicts.png" alt="Routing conflicts review" width="49%">
+  <img src="docs/screenshot-planner.png" alt="Visual address planner" width="49%">
+</p>
+
 ## Releases & Roadmap
 
 Full details per release are in the [CHANGELOG](CHANGELOG.md); disk images are on the

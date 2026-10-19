@@ -53,8 +53,18 @@ xattr -dr com.apple.quarantine "/Applications/CIDR Atlas.app"
 ```
 
 Expect that prompt again after every `brew upgrade`: ad-hoc builds get a new code identity
-each release, so macOS cannot carry the approval over until releases are notarized. Update
-with `brew upgrade --cask cidr-atlas`. `brew uninstall --cask --zap cidr-atlas` also removes
+each release, so macOS cannot carry the approval over until releases are notarized.
+
+`cidrctl` is quarantined the same way, so macOS may block its first run. Allow it under
+**Privacy & Security**, or clear the flag on the linked executable:
+
+```bash
+xattr -d com.apple.quarantine "$(readlink -f "$(brew --prefix)/bin/cidrctl")"
+```
+
+On a managed Mac, endpoint security software may remove the unsigned executable when it
+first runs; ask your administrator to allow it, then `brew reinstall --cask cidr-atlas`.
+Update with `brew upgrade --cask cidr-atlas`. `brew uninstall --cask --zap cidr-atlas` also removes
 the preferences but keeps your inventory (see [Uninstall](#uninstall)).
 
 ### Option 2 — Download the disk image

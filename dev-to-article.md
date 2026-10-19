@@ -10,9 +10,9 @@ The failure mode is quiet. Two teams pick the same `/16` in different compartmen
 
 So I built **CIDR Atlas**: a local-first CIDR inventory and allocation planner for OCI networks, with a macOS app and a desktop CLI that share one engine and one local SQLite database. It discovers VCNs and subnets through your existing OCI CLI, checks overlaps inside explicit routing domains, and recommends free space with exact IPv4 and IPv6 arithmetic.
 
-> **[0.4.0 is out](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.4.0).** It makes imports and exports safer, canonicalizes OCI region keys, adds retries and collection limits to discovery, a centred progress panel, Clear inventory, and a System/Light/Dark appearance setting. [What 0.4.0 changed](#what-040-changed) has the details.
+> *Updated October 2026:* **[0.4.1 is out](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.4.1)** with a Homebrew cask and the `cidrctl` CLI for Apple silicon and Intel in the disk image. [0.4.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.4.0) made imports and exports safer and added OCI region canonicalization, discovery retries and collection limits, a centred progress panel, Clear inventory, and a System/Light/Dark appearance setting; [What 0.4.0 changed](#what-040-changed) has the details.
 >
-> Want to try it? **[Download CIDR-Atlas.dmg →](https://github.com/sergio-farfan/cidr-atlas/releases/latest/download/CIDR-Atlas.dmg)**, open it, and drag CIDR Atlas to Applications.
+> Want to try it? `brew install --cask sergio-farfan/tap/cidr-atlas`, or **[download CIDR-Atlas.dmg →](https://github.com/sergio-farfan/cidr-atlas/releases/latest/download/CIDR-Atlas.dmg)**, open it, and drag CIDR Atlas to Applications.
 
 ![CIDR Atlas address inventory dashboard](https://raw.githubusercontent.com/sergio-farfan/cidr-atlas/d129ef3f3514648877f0f2144a43adcea7d5f763/docs/screenshot.png)
 
@@ -221,9 +221,17 @@ The README's [Before you start](https://github.com/sergio-farfan/cidr-atlas#befo
 
 ## Build & Install
 
-**Easiest:** **[download CIDR-Atlas.dmg](https://github.com/sergio-farfan/cidr-atlas/releases/latest/download/CIDR-Atlas.dmg)** (or browse the [latest release](https://github.com/sergio-farfan/cidr-atlas/releases/latest)), open it and drag **CIDR Atlas** to **Applications**. The disk image is universal for **Apple silicon and Intel**. New installations start empty; there is optional, clearly labelled fictional sample data to explore.
+**Homebrew (recommended)** installs the app and the `cidrctl` command for your Mac's architecture:
 
-CIDR Atlas is **ad-hoc signed and not notarized**. After verifying the download against the release checksum and attempting to open it, you may need **System Settings → Privacy & Security → Open Anyway**. See [Apple's first-launch instructions](https://support.apple.com/en-lamr/102445).
+```bash
+brew install --cask sergio-farfan/tap/cidr-atlas
+```
+
+Homebrew asks you to trust the tap the first time (`brew trust sergio-farfan/tap`). Update with `brew upgrade --cask cidr-atlas`; `brew uninstall --cask --zap cidr-atlas` removes the app and its preferences and deliberately keeps your inventory.
+
+**Or download the disk image:** **[CIDR-Atlas.dmg](https://github.com/sergio-farfan/cidr-atlas/releases/latest/download/CIDR-Atlas.dmg)** (or browse the [latest release](https://github.com/sergio-farfan/cidr-atlas/releases/latest)), open it and drag **CIDR Atlas** to **Applications**. The image is universal for **Apple silicon and Intel** and also contains `cidrctl-arm64` and `cidrctl-x86_64`; its `INSTALL.txt` explains how to put the right one on your `PATH`. New installations start empty; there is optional, clearly labelled fictional sample data to explore.
+
+CIDR Atlas is **ad-hoc signed and not notarized**. After verifying the download and attempting to open it, you may need **System Settings → Privacy & Security → Open Anyway**, again after each update. See [Apple's first-launch instructions](https://support.apple.com/en-lamr/102445). The command-line tool is quarantined the same way: if macOS blocks its first run, allow it there or run `xattr -d com.apple.quarantine "$(readlink -f "$(brew --prefix)/bin/cidrctl")"`.
 
 **From source**, with Flutter 3.47 or newer and Xcode:
 

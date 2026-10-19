@@ -248,13 +248,15 @@ identical `CIDR-Atlas.dmg` are 27,524,851 bytes, SHA-256
 assets were byte-identical to the local build, and an anonymous download returned
 the same size.
 
-Homebrew: the cask `sergio-farfan/tap/cidr-atlas` is drafted in the local tap clone
-and not yet pushed. On this managed Mac `brew install --cask` installed the app and
+Homebrew: the cask `sergio-farfan/tap/cidr-atlas` was published on 2026-10-19
+(tap commit `3b8d692`, merged after the tap's CI passed its syntax, style, online
+audit and install/uninstall smoke test). On this managed Mac `brew install --cask` installed the app and
 linked `cidrctl`, but the staged `cidrctl` carries the download quarantine flag,
 Gatekeeper rejects it (`spctl`), and the first run removed the executable without a
 Defender detection or a Trash entry. Uninstalling with `--zap` left the inventory
-byte-identical. The CLI's first run through Homebrew still has to be observed on an
-unmanaged Mac before the cask is published.
+byte-identical. The cask caveat, the README and the dev.to article document the
+quarantine step and the managed-Mac case. The CLI's first run through Homebrew is
+still to be observed on an unmanaged Mac.
 
 [CIDR Atlas 0.4.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.4.0)
 was published on 2026-10-16 as the first regular (non-prerelease) release, so
@@ -302,8 +304,8 @@ data and CLI) are lower than the lockfiles resolve (>=3.11.0); raising them to
 
 ## Next actions
 
-Observe the Homebrew-linked `cidrctl` first run on an unmanaged Mac, then publish
-the cask. Check Clear inventory and the all-compartments retry in the published
+Observe the Homebrew-linked `cidrctl` first run on an unmanaged Mac and adjust the
+cask caveat to match. Check Clear inventory and the all-compartments retry in the published
 build; both are covered by widget tests only.
 
 Homebrew distribution (`docs/plans/2026-10-17-homebrew-publication.md`): the

@@ -36,8 +36,7 @@ after reviewing the verification results and any checks still outstanding.
 CI (`.github/workflows/ci.yml`) checks formatting, analysis and tests. Packaging is
 not automated: the universal app needs Xcode and the DMG needs Apple's `hdiutil`,
 `codesign` and `lipo` on macOS. Building releases on a hosted macOS runner would
-add a costly macOS job to a private repository without improving the ad hoc
-signature, so release builds are made and verified locally with the scripts
+add a long macOS packaging job without improving the ad hoc signature, so release builds are made and verified locally with the scripts
 below.
 
 ## 1. Prepare the source
@@ -255,6 +254,6 @@ confirm that it is now the latest:
 gh api repos/sergio-farfan/cidr-atlas/releases/latest --jq .tag_name
 ```
 
-The repository is private, so the `/releases/latest/download/CIDR-Atlas.dmg`
-link works only for signed-in users with access. Finally, record the source
+Confirm that `/releases/latest/download/CIDR-Atlas.dmg` downloads without signing
+in (`curl -sL -o /dev/null -w '%{http_code} %{size_download}\n' <url>`). Finally, record the source
 commit, sizes and digests in `PROJECT.md` and commit that update.

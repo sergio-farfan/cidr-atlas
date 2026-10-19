@@ -4,6 +4,8 @@
   <img src="https://img.shields.io/badge/dart-3.13-0175C2?style=flat-square&logo=dart&logoColor=white" alt="Dart 3.13">
   <img src="https://img.shields.io/badge/storage-SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite">
   <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT License">
+  <img src="https://img.shields.io/github/v/release/sergio-farfan/cidr-atlas?style=flat-square&label=version" alt="Version">
+  <img src="https://img.shields.io/github/downloads/sergio-farfan/cidr-atlas/total?style=flat-square&label=downloads" alt="Downloads">
 </p>
 
 # CIDR Atlas
@@ -31,7 +33,7 @@ SQLite inventory.
 
 **[Download CIDR-Atlas.dmg →](https://github.com/sergio-farfan/cidr-atlas/releases/latest/download/CIDR-Atlas.dmg)**
 (direct download; or browse the [latest release](https://github.com/sergio-farfan/cidr-atlas/releases/latest)).
-While the repository is private, downloading requires repository access. Each release provides a universal disk
+Each release provides a universal disk
 image for Apple silicon and Intel and its SHA-256 checksum. From 0.4.0 the assets are
 named `CIDR-Atlas-X.Y.Z.dmg` and `CIDR-Atlas-X.Y.Z.dmg.sha256`, plus an identical
 stable-name `CIDR-Atlas.dmg`; 0.1.0 to 0.3.0 use `CIDR-Atlas-X.Y.Z-macos-universal.dmg`.
@@ -232,7 +234,7 @@ Unordered and undated:
 
 ## Build from source
 
-Clone the private [source repository](https://github.com/sergio-farfan/cidr-atlas)
+Clone the [source repository](https://github.com/sergio-farfan/cidr-atlas)
 to `~/projects/git/cidr-atlas` on your Mac and open the folder in your development
 environment. `AGENTS.md` defines project conventions, `PROJECT.md` records
 implementation status and verification, and `docs/` contains the architecture

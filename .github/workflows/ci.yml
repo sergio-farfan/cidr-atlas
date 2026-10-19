@@ -57,11 +57,6 @@ jobs:
 
   app:
     name: Flutter app (macOS)
-    # The repository is private, where macOS runner minutes are billed at ten
-    # times the Linux rate. The app job therefore runs on pushes to main and on
-    # manual dispatch only, not on pull requests; run it for a branch with
-    # workflow_dispatch when a pull request changes the app.
-    if: github.event_name != 'pull_request'
     runs-on: macos-15
     timeout-minutes: 30
     defaults:

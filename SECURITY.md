@@ -34,9 +34,10 @@ release before reporting, where possible.
 
 ## Reporting a vulnerability
 
-The repository is private, so GitHub private vulnerability reporting is not
-available. Email sergio.farfan@gmail.com directly with **CIDR Atlas security**
-in the subject. Include the version (`cidrctl --version` or the app header), the
+Report suspected vulnerabilities privately through
+[GitHub Security Advisories](https://github.com/sergio-farfan/cidr-atlas/security/advisories/new),
+or email sergio.farfan@gmail.com with **CIDR Atlas security** in the subject.
+Include the version (`cidrctl --version` or the app header), the
 macOS version, and the steps to reproduce with fictional data.
 
 Do not post vulnerability details in issues, pull requests or discussions, and do

@@ -248,7 +248,9 @@ SHA-256 `be77151e3651fde834b0f9e8d3e3305d32be5b01d34935f61e85acd027413265`; the
 checksum file `CIDR-Atlas-0.4.0.dmg.sha256` has SHA-256
 `a4cbe9ed12c58b340754a70907d914c0284c718f811cd94559469c06554ce278`. The downloaded
 release assets were byte-identical to the local artifacts, the checksum file
-verified, and GitHub's asset digests match. The repository remains private.
+verified, and GitHub's asset digests match. The repository was made public on
+2026-10-19; an anonymous download of the stable asset returned the same 21,330,963
+bytes, and GitHub private vulnerability reporting is enabled.
 
 The previous preview, [v0.3.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.3.0),
 remains published as a prerelease. Tag `v0.3.0` identifies source commit

@@ -99,6 +99,9 @@ folder on your PATH, rename it cidrctl, and clear the download quarantine:
   install -m 755 /Volumes/CIDR\ Atlas*/cidrctl-arm64 ~/bin/cidrctl
   xattr -d com.apple.quarantine ~/bin/cidrctl 2>/dev/null || true
 
+If macOS reports that cidrctl was "Not Opened", click Done (not Move to
+Trash), then choose Open Anyway in System Settings > Privacy & Security.
+
 Homebrew installs the app and the matching cidrctl in one step:
 
   brew install --cask sergio-farfan/tap/cidr-atlas

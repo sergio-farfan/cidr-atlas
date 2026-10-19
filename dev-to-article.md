@@ -231,7 +231,7 @@ Homebrew asks you to trust the tap the first time (`brew trust sergio-farfan/tap
 
 **Or download the disk image:** **[CIDR-Atlas.dmg](https://github.com/sergio-farfan/cidr-atlas/releases/latest/download/CIDR-Atlas.dmg)** (or browse the [latest release](https://github.com/sergio-farfan/cidr-atlas/releases/latest)), open it and drag **CIDR Atlas** to **Applications**. The image is universal for **Apple silicon and Intel** and also contains `cidrctl-arm64` and `cidrctl-x86_64`; its `INSTALL.txt` explains how to put the right one on your `PATH`. New installations start empty; there is optional, clearly labelled fictional sample data to explore.
 
-CIDR Atlas is **ad-hoc signed and not notarized**. After verifying the download and attempting to open it, you may need **System Settings → Privacy & Security → Open Anyway**, again after each update. See [Apple's first-launch instructions](https://support.apple.com/en-lamr/102445). The command-line tool is quarantined the same way: if macOS blocks its first run, allow it there or run `xattr -d com.apple.quarantine "$(readlink -f "$(brew --prefix)/bin/cidrctl")"`.
+CIDR Atlas is **ad-hoc signed and not notarized**. After verifying the download and attempting to open it, you may need **System Settings → Privacy & Security → Open Anyway**, again after each update. See [Apple's first-launch instructions](https://support.apple.com/en-lamr/102445). The command-line tool is quarantined the same way: its first run shows **"cidrctl-arm64" Not Opened**. Click **Done** (not Move to Trash), then **Open Anyway** in Privacy & Security, or run `xattr -d com.apple.quarantine "$(readlink -f "$(brew --prefix)/bin/cidrctl")"`.
 
 **From source**, with Flutter 3.47 or newer and Xcode:
 

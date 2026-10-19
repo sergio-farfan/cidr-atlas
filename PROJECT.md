@@ -237,6 +237,25 @@ requests or local inventory writes were performed during native QA.
 
 ## Release status
 
+[CIDR Atlas 0.4.1](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.4.1)
+was published on 2026-10-19 as the latest regular release. Annotated tag `v0.4.1`
+identifies source commit `bcda702e44d451137d77c8b5e1cd5e47cedd3548`, whose CI run
+(39286961864) passed. The app is unchanged from 0.4.0 apart from its version; the
+disk image adds `cidrctl-arm64` and `cidrctl-x86_64`, built with the Flutter-bundled
+Dart and the x64 Dart SDK 3.13.5 under Rosetta. `CIDR-Atlas-0.4.1.dmg` and the
+identical `CIDR-Atlas.dmg` are 27,524,851 bytes, SHA-256
+`a3d76b75ec856ddbb5730ac19ea8a12a86ef0aa3ad34a8c1cbbe38d03af219cf`. The downloaded
+assets were byte-identical to the local build, and an anonymous download returned
+the same size.
+
+Homebrew: the cask `sergio-farfan/tap/cidr-atlas` is drafted in the local tap clone
+and not yet pushed. On this managed Mac `brew install --cask` installed the app and
+linked `cidrctl`, but the staged `cidrctl` carries the download quarantine flag,
+Gatekeeper rejects it (`spctl`), and the first run removed the executable without a
+Defender detection or a Trash entry. Uninstalling with `--zap` left the inventory
+byte-identical. The CLI's first run through Homebrew still has to be observed on an
+unmanaged Mac before the cask is published.
+
 [CIDR Atlas 0.4.0](https://github.com/sergio-farfan/cidr-atlas/releases/tag/v0.4.0)
 was published on 2026-10-16 as the first regular (non-prerelease) release, so
 `releases/latest` and the stable `CIDR-Atlas.dmg` download link now resolve to it.
@@ -283,7 +302,8 @@ data and CLI) are lower than the lockfiles resolve (>=3.11.0); raising them to
 
 ## Next actions
 
-Check Clear inventory and the all-compartments retry in the published 0.4.0
+Observe the Homebrew-linked `cidrctl` first run on an unmanaged Mac, then publish
+the cask. Check Clear inventory and the all-compartments retry in the published
 build; both are covered by widget tests only.
 
 Homebrew distribution (`docs/plans/2026-10-17-homebrew-publication.md`): the

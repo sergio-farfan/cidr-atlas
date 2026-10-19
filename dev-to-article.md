@@ -65,7 +65,9 @@ The second rule is the one that catches most homegrown tools out: **a range bein
 - the record names its parent explicitly (`parentId`), forming a valid chain of allocation → VCN → subnet, or
 - OCI says so: the subnet's `vcn-id` matches the VCN's OCID, in the same tenancy, region and routing domain.
 
-Anything else that overlaps is reported as a conflict for review. Structural problems such as cycles, a subnet whose parent is an allocation, or a child outside its parent's range are hard validation errors.
+Anything else that overlaps is reported as a conflict for review.
+
+![Routing conflicts: duplicate and unapproved overlaps inside one routing domain](https://raw.githubusercontent.com/sergio-farfan/cidr-atlas/e2a7cf312d8611e7781f078683f5eddf7a655d83/docs/screenshot-conflicts.png) Structural problems such as cycles, a subnet whose parent is an allocation, or a child outside its parent's range are hard validation errors.
 
 ---
 
@@ -76,6 +78,8 @@ IPv6 addresses are 128-bit integers, which rules out doubles and makes "count th
 Input is strict on purpose. `10.64.1.3/24` is rejected with "Host bits are set. Use 10.64.1.0/24." instead of being silently changed into a different network, and a prefix length with leading zeros (`10.0.0.0/08`) is rejected too. Reserving a range you didn't type is how address plans drift.
 
 For OCI IPv4 subnets the planner applies Oracle's rules: `/16` to `/30`, with three addresses reserved per subnet. Demand sizing is explicit about growth: 100 addresses plus 20% growth plus 4 additional is 124 assignable addresses, so the planner picks a `/25` (125 assignable after the three reserved). Oracle's documentation disagrees with itself about IPv6 reservations, so CIDR Atlas shows exact IPv6 totals and deliberately omits an assignable-host figure rather than guessing.
+
+![The visual address planner: planning inputs and the address hierarchy](https://raw.githubusercontent.com/sergio-farfan/cidr-atlas/e2a7cf312d8611e7781f078683f5eddf7a655d83/docs/screenshot-planner.png)
 
 ---
 
